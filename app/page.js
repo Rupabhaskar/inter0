@@ -7,7 +7,18 @@ export default function Home() {
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="max-w-7xl mx-auto p-6 flex justify-between items-center">
-        <h1 className="font-bold text-xl">RankSprint</h1>
+        <Link href="/" className="flex items-center shrink-0 h-12 sm:h-14 md:h-16 w-32 sm:w-36 md:w-40 overflow-hidden rounded">
+          <span className="block h-full w-full scale-100">
+            <Image
+              src="/Ranksprint.png"
+              alt="RankSprint - Practice. Perform. Achieve."
+              width={300}
+              height={90}
+              className="h-full w-full object-cover object-center"
+              priority
+            />
+          </span>
+        </Link>
         <Link
           href="/college/dashboard"
           className="text-sm font-medium text-blue-600 hover:underline"
@@ -17,15 +28,17 @@ export default function Home() {
       </header>
 
       {/* Hero Section */}
-      <section className="relative min-h-[80vh] flex items-center">
-        {/* Background Image */}
-        <Image
-          src="/hero.jpg"
-          alt="Student taking online exam"
-          fill
-          priority
-          className="object-cover"
-        />
+      <section className="relative min-h-[80vh] flex items-center overflow-hidden">
+        {/* Background Image - zoomed for visual impact */}
+        <div className="absolute inset-0 scale-[1.25]">
+          <Image
+            src="/hero.jpg"
+            alt="Student taking online exam"
+            fill
+            priority
+            className="object-cover w-full h-full"
+          />
+        </div>
 
         {/* Light Overlay */}
         <div className="absolute inset-0 bg-white/15"></div>

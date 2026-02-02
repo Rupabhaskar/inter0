@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signOut } from "firebase/auth";
@@ -41,43 +42,50 @@ export default function Navbar() {
   }
 
   const linkClass = (href) =>
-    `flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition ${
+    `flex items-center gap-2.5 px-4 py-2.5 rounded-md text-base font-medium transition ${
       pathname === href
         ? "bg-blue-600 text-white"
         : "text-slate-700 hover:bg-slate-100"
     }`;
 
   return (
-    <nav className="bg-white border-b border-slate-200">
-      <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
-        {/* LOGO */}
-        <Link href="/dashboard" className="font-bold text-lg">
-          RankSprint
+    <nav className="bg-white border-b border-slate-200 overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4 h-16 md:h-20 flex items-center justify-between gap-4 min-h-0">
+        {/* LOGO - contained inside navbar, no overflow */}
+        <Link href="/" className="flex items-center shrink-0 max-h-full py-1">
+          <Image
+            src="/Ranksprint.png"
+            alt="RankSprint - Practice. Perform. Achieve."
+            width={320}
+            height={96}
+            className="h-14 md:h-[10rem] w-auto max-h-full object-contain object-left"
+            priority
+          />
         </Link>
 
-        {/* DESKTOP MENU */}
-        <div className="hidden md:flex items-center gap-1">
+        {/* DESKTOP MENU - zoomed / larger */}
+        <div className="hidden md:flex items-center gap-1 shrink-0">
           <Link href="/dashboard" className={linkClass("/dashboard")}>
-            <LayoutDashboard size={18} />
+            <LayoutDashboard size={22} />
             Dashboard
           </Link>
 
           <Link href="/select-test" className={linkClass("/select-test")}>
-            <BookOpen size={18} />
+            <BookOpen size={22} />
             Exams
           </Link>
 
           <Link href="/profile" className={linkClass("/profile")}>
-            <User size={18} />
+            <User size={22} />
             Profile
           </Link>
 
           {user && (
             <button
               onClick={handleLogout}
-              className="ml-2 flex items-center gap-2 px-3 py-2 rounded text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition"
+              className="ml-2 flex items-center gap-2 px-4 py-2.5 rounded text-base font-medium bg-red-500 text-white hover:bg-red-600 transition"
             >
-              <LogOut size={18} />
+              <LogOut size={20} />
               Logout
             </button>
           )}
@@ -86,9 +94,9 @@ export default function Navbar() {
         {/* MOBILE MENU BUTTON */}
         <button
           onClick={() => setMenuOpen(!menuOpen)}
-          className="md:hidden p-2 rounded border"
+          className="md:hidden p-2.5 rounded border shrink-0"
         >
-          <Menu size={20} />
+          <Menu size={24} />
         </button>
       </div>
 
