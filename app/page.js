@@ -1,17 +1,90 @@
 import Link from "next/link";
 import Image from "next/image";
 import JeeSyllabusModal from "../components/JeeSyllabusModal";
+import { siteUrl, publicImages, getHomeImageSchema } from "@/lib/seo";
+
+export const metadata = {
+  title: "RankSprint | Inter JEE Mock Test & EAMCET Mock Test – Practice Online",
+  description:
+    "RankSprint: Inter JEE mock test and EAMCET mock test platform. JEE Main, JEE Advanced & AP EAMCET online mock tests for inter students. Practice. Perform. Achieve.",
+  keywords: [
+    "RankSprint",
+    "inter JEE mock test",
+    "EAMCET mock test",
+    "inter jee mock test",
+    "eamcet mock test",
+    "JEE mock test",
+    "AP EAMCET mock test",
+  ],
+  openGraph: {
+    title: "RankSprint | Inter JEE Mock Test & EAMCET Mock Test",
+    description: "Inter JEE mock test and EAMCET mock test on RankSprint. JEE Main, JEE Advanced & AP EAMCET online mock tests for inter students.",
+    url: siteUrl,
+  },
+  alternates: { canonical: siteUrl },
+};
+
+function HomeImageSchema() {
+  const schema = getHomeImageSchema();
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+    />
+  );
+}
+
+function HomeFaqSchema() {
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: [
+      {
+        "@type": "Question",
+        name: "What is RankSprint?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "RankSprint is India's online platform for inter JEE mock test and EAMCET mock test. It offers JEE Main, JEE Advanced and AP EAMCET mock tests for inter students with real exam interface and instant results.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Where can I take inter JEE mock test and EAMCET mock test?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "RankSprint offers inter JEE mock test and EAMCET mock test online. You can practice JEE Main, JEE Advanced and AP EAMCET mock tests for inter students at RankSprint.",
+        },
+      },
+      {
+        "@type": "Question",
+        name: "Is RankSprint free for JEE and EAMCET mock test?",
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: "RankSprint provides online mock tests for JEE Main, JEE Advanced and AP EAMCET for inter students. Practice with real exam interface and get instant results.",
+        },
+      },
+    ],
+  };
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+    />
+  );
+}
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-slate-50">
+      <HomeImageSchema />
+      <HomeFaqSchema />
       {/* Header */}
       <header className="max-w-7xl mx-auto p-6 flex justify-between items-center">
         <Link href="/" className="flex items-center shrink-0 h-12 sm:h-14 md:h-16 w-32 sm:w-36 md:w-40 overflow-hidden rounded">
           <span className="block h-full w-full scale-100">
             <Image
-              src="/Ranksprint.png"
-              alt="RankSprint - Practice. Perform. Achieve."
+              src={publicImages.logo.src}
+              alt={publicImages.logo.alt}
               width={300}
               height={90}
               className="h-full w-full object-cover object-center"
@@ -32,8 +105,8 @@ export default function Home() {
         {/* Background Image - zoomed for visual impact */}
         <div className="absolute inset-0 scale-[1.25]">
           <Image
-            src="/hero.jpg"
-            alt="Student taking online exam"
+            src={publicImages.hero.src}
+            alt={publicImages.hero.alt}
             fill
             priority
             className="object-cover w-full h-full"
@@ -108,6 +181,13 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="text-center text-sm text-slate-500 py-6">
+        <Link
+          href="/blog"
+          className="inline-block text-blue-600 hover:underline mb-2 sm:mb-0 sm:mr-4"
+        >
+          Blogs
+        </Link>
+        <span className="hidden sm:inline sm:mr-4">·</span>
         © {new Date().getFullYear()} RankSprint Platform
       </footer>
     </div>

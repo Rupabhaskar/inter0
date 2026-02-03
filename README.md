@@ -223,6 +223,13 @@ Reply with:
 
 NEXT
 
+---
+
+## SEO (On-page, Off-page, Technical)
+
+- **Technical:** Sitemap at `/sitemap.xml`, robots at `/robots.txt`, JSON-LD (Organization + WebSite). Set `NEXT_PUBLIC_SITE_URL` in env (e.g. `https://ranksprint.com`) for correct canonicals and sitemap URLs.
+- **On-page:** Blog at `/blog` and `/blog/[slug]` for content and keywords; no changes were made to existing page content.
+- **Off-page:** Open Graph and Twitter Card meta are set. Add your social profile URLs in `lib/seo.js` inside `getOrganizationSchema()` → `sameAs` for better discovery when others link or share.
 
 =================================================================================================================================================
 

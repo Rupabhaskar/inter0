@@ -55,7 +55,7 @@ export default function Navbar() {
         <Link href="/" className="flex items-center shrink-0 max-h-full py-1">
           <Image
             src="/Ranksprint.png"
-            alt="RankSprint - Practice. Perform. Achieve."
+            alt="RankSprint logo – Inter JEE mock test and EAMCET mock test platform"
             width={320}
             height={96}
             className="h-14 md:h-[10rem] w-auto max-h-full object-contain object-left"

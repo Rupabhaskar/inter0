@@ -246,7 +246,7 @@ export default function SyllabusModal() {
           <div className="flex justify-center">
             <Image
               src="/syllabus.jpg"
-              alt="Exam prep"
+              alt="JEE Main JEE Advanced AP EAMCET syllabus – RankSprint exam preparation"
               width={460}
               height={460}
               priority
