@@ -60,11 +60,10 @@ export default function Dashboard() {
       snapshot.forEach((doc) => {
         const data = doc.data();
         
-        // Check if this result belongs to the current user (handle both studentId and uid)
+        // Show only results for the logged-in user (by studentId or uid)
         const resultStudentId = data.studentId || data.uid;
-        // For students: only show their own tests. For admins/teachers: show all.
-        if (role === "student" && resultStudentId !== user.uid) {
-          return; // Skip if doesn't match current student
+        if (!resultStudentId || resultStudentId !== user.uid) {
+          return; // Skip if not this user's result
         }
 
         // Handle different date formats
@@ -136,6 +135,7 @@ export default function Dashboard() {
           exam: data.exam || examType,
           test: testName,
           testId: data.testId || null,
+          testSource: data.testSource || null,
           examType: examType,
           score: score,
           total: total,
@@ -164,11 +164,16 @@ export default function Dashboard() {
         console.error("Error caching results:", err);
       }
 
-      // Fetch test names for college / id‑based tests (async)
+      // Fetch test names: college (tests) and JEE/EAMCET (superadminTests)
       const fetchTestNames = async () => {
-        const testIds = [...new Set(results.filter(r => r.testId).map(r => r.testId))];
-        if (testIds.length === 0) return;
-        
+        const resultsWithTestId = results.filter(r => r.testId);
+        if (resultsWithTestId.length === 0) return;
+        const testIdToSource = {};
+        resultsWithTestId.forEach(r => {
+          if (!testIdToSource[r.testId]) testIdToSource[r.testId] = r.testSource || "tests";
+        });
+        const testIds = Object.keys(testIdToSource);
+
         // Check cache first
         const cachedTestNames = {};
         testIds.forEach(testId => {
@@ -183,15 +188,15 @@ export default function Dashboard() {
           }
         });
 
-        // Fetch missing test names
+        // Fetch missing test names from correct collection
         const missingIds = testIds.filter(id => !cachedTestNames[id]);
         if (missingIds.length > 0) {
           const testNamePromises = missingIds.map(async (testId) => {
+            const collectionName = testIdToSource[testId] === "superadminTests" ? "superadminTests" : "tests";
             try {
-              const testDoc = await getDoc(doc(db, "tests", testId));
+              const testDoc = await getDoc(doc(db, collectionName, testId));
               if (testDoc.exists()) {
                 const name = testDoc.data().name || testId;
-                // Cache the name
                 localStorage.setItem(`test_name_${testId}`, JSON.stringify({
                   name,
                   timestamp: Date.now()
@@ -201,9 +206,18 @@ export default function Dashboard() {
             } catch (err) {
               console.error(`Error fetching test ${testId}:`, err);
             }
+            if (collectionName === "tests") {
+              try {
+                const testDoc = await getDoc(doc(db, "superadminTests", testId));
+                if (testDoc.exists()) {
+                  const name = testDoc.data().name || testId;
+                  localStorage.setItem(`test_name_${testId}`, JSON.stringify({ name, timestamp: Date.now() }));
+                  return { testId, name };
+                }
+              } catch (e) {}
+            }
             return { testId, name: testId };
           });
-          
           const testNameResults = await Promise.all(testNamePromises);
           testNameResults.forEach(({ testId, name }) => {
             cachedTestNames[testId] = name;
@@ -339,14 +353,22 @@ export default function Dashboard() {
     return Array.from(types).sort();
   }, [history]);
 
-  // Get formatted test type name
+  // Show exam name, never raw id/slug
   const getTestTypeName = (type) => {
-    const names = {
+    if (!type) return "Unknown";
+    const known = {
       "jee-mains": "JEE Mains",
+      "jee mains": "JEE Mains",
       "jee-advanced": "JEE Advanced",
+      "jee advanced": "JEE Advanced",
+      "jee advance": "JEE Advanced",
       "college": "College",
+      "eamcet": "EAMCET",
     };
-    return names[type] || type;
+    const lower = String(type).toLowerCase().trim();
+    if (known[lower]) return known[lower];
+    if (known[type]) return known[type];
+    return String(type).replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
   return (
@@ -418,6 +440,7 @@ export default function Dashboard() {
                 label="Tests Taken" 
                 value={totalTests}
                 info="Total number of tests you've completed"
+                getTestTypeName={getTestTypeName}
               />
               <StatCard 
                 label="Average Score" 
@@ -425,6 +448,7 @@ export default function Dashboard() {
                 info={`Average score across all tests. Calculated from ${totalTests} test${totalTests !== 1 ? 's' : ''}`}
                 statsByType={statsByTestType}
                 statKey="avgScore"
+                getTestTypeName={getTestTypeName}
               />
               <StatCard 
                 label="Accuracy" 
@@ -432,6 +456,7 @@ export default function Dashboard() {
                 info={`Overall accuracy: ${totalCorrect} correct out of ${totalQuestions} total questions`}
                 statsByType={statsByTestType}
                 statKey="accuracy"
+                getTestTypeName={getTestTypeName}
               />
               <StatCard 
                 label="Best Score" 
@@ -439,6 +464,7 @@ export default function Dashboard() {
                 info={`Your highest score across all tests`}
                 statsByType={statsByTestType}
                 statKey="bestScore"
+                getTestTypeName={getTestTypeName}
               />
             </div>
 
@@ -466,15 +492,11 @@ export default function Dashboard() {
                   </thead>
                   <tbody>
                     {filteredHistory.slice(0, 10).map((test) => {
-                      // Get test name - for college tests, use testNames map, otherwise use test name or subject
-                      let examDisplay = test.subject || `${test.exam} - ${test.test}`;
-                      if (test.testId && testNames[test.testId]) {
-                        examDisplay = testNames[test.testId];
-                      } else if (test.test && test.exam) {
-                        examDisplay = `${getTestTypeName(test.examType)} - ${test.test}`;
-                      } else if (test.test) {
-                        examDisplay = test.test;
-                      }
+                      const examName = getTestTypeName(test.examType);
+                      const testNameDisplay = test.test || (test.testId && testNames[test.testId]) || "";
+                      const examDisplay = testNameDisplay
+                        ? `${examName} – ${testNameDisplay}`
+                        : examName;
                       
                       return (
                         <tr
@@ -521,7 +543,7 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ label, value, info, statsByType, statKey }) {
+function StatCard({ label, value, info, statsByType, statKey, getTestTypeName }) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   return (
@@ -560,17 +582,13 @@ function StatCard({ label, value, info, statsByType, statKey }) {
                 <div className="mt-2 pt-2 border-t border-slate-700">
                   <p className="font-semibold mb-1">By Test Type:</p>
                   {Object.entries(statsByType).map(([type, stats]) => {
-                    const typeNames = {
-                      "jee-mains": "JEE Mains",
-                      "jee-advanced": "JEE Advanced",
-                      "college": "College",
-                    };
+                    const displayName = getTestTypeName ? getTestTypeName(type) : type;
                     const displayValue = statKey === "accuracy" 
                       ? `${stats[statKey]}%`
                       : stats[statKey];
                     return (
                       <p key={type} className="text-xs">
-                        {typeNames[type] || type}: {displayValue}
+                        {displayName}: {displayValue}
                       </p>
                     );
                   })}

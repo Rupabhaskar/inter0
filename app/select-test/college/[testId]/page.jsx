@@ -359,6 +359,7 @@ export default function CollegeTestPage() {
       }
     });
 
+    const notVisitedCount = questions.length - visited.size;
     await addDoc(collection(db, "results"), {
       uid: auth.currentUser.uid,
       studentName,
@@ -366,6 +367,9 @@ export default function CollegeTestPage() {
       testId,
       score,
       total: questions.length,
+      correct: correctCount.length,
+      wrong: wrongCount.length,
+      skipped: notVisitedCount,
       answers: formattedAnswers,
       testType: test.testType || "",
       subjectWise,
