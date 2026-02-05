@@ -1,6 +1,12 @@
 "use client";
 
+import { useState } from "react";
+
+const DEFAULT_DISPLAY_PASSWORD = "Sample@123";
+
 export default function StudentTable({ students, loading, onRefresh, collegeCode = "_" }) {
+  const [resettingId, setResettingId] = useState(null);
+
   const deleteStudent = async (s) => {
     if (!confirm("Delete this student?")) return;
 
@@ -14,6 +20,28 @@ export default function StudentTable({ students, loading, onRefresh, collegeCode
     else alert("Delete failed");
   };
 
+  const resetPassword = async (s) => {
+    if (!confirm(`Reset password for ${s.name || s.rollNumber} to default (${DEFAULT_DISPLAY_PASSWORD})?`)) return;
+    const uid = s.uid || s.id;
+    setResettingId(uid);
+    try {
+      const res = await fetch("/college/api/reset-student-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid, id: s.id, collegeCode }),
+      });
+      if (res.ok) onRefresh();
+      else {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || "Reset failed");
+      }
+    } catch (e) {
+      alert("Reset failed");
+    } finally {
+      setResettingId(null);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow overflow-x-auto">
       <table className="w-full">
@@ -24,6 +52,7 @@ export default function StudentTable({ students, loading, onRefresh, collegeCode
             <th className="p-3">College</th>
             <th className="p-3">Email</th>
             <th className="p-3">Course</th>
+            <th className="p-3">Password</th>
             <th className="p-3">Action</th>
           </tr>
         </thead>
@@ -31,34 +60,49 @@ export default function StudentTable({ students, loading, onRefresh, collegeCode
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan="6" className="p-6 text-center">
+              <td colSpan="7" className="p-6 text-center">
                 Loading...
               </td>
             </tr>
           ) : students.length === 0 ? (
             <tr>
-              <td colSpan="6" className="p-6 text-center">
+              <td colSpan="7" className="p-6 text-center">
                 No students found
               </td>
             </tr>
           ) : (
-            students.map((s) => (
-              <tr key={s.id} className="border-b">
-                <td className="p-3">{s.rollNumber}</td>
-                <td className="p-3">{s.name}</td>
-                <td className="p-3">{s.college ?? "—"}</td>
-                <td className="p-3">{s.email}</td>
-                <td className="p-3">{s.course}</td>
-                <td className="p-3">
-                  <button
-                    onClick={() => deleteStudent(s)}
-                    className="bg-red-600 text-white px-3 py-1 rounded"
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))
+            students.map((s) => {
+              const uid = s.uid || s.id;
+              const isResetting = resettingId === uid;
+              const showDefaultPassword = s.defaultPassword === true;
+              return (
+                <tr key={s.id} className="border-b">
+                  <td className="p-3">{s.rollNumber}</td>
+                  <td className="p-3">{s.name}</td>
+                  <td className="p-3">{s.college ?? "—"}</td>
+                  <td className="p-3">{s.email}</td>
+                  <td className="p-3">{s.course}</td>
+                  <td className="p-3 font-mono text-sm">
+                    {showDefaultPassword ? DEFAULT_DISPLAY_PASSWORD : "••••••••"}
+                  </td>
+                  <td className="p-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => resetPassword(s)}
+                      disabled={isResetting}
+                      className="bg-amber-600 text-white px-3 py-1 rounded text-sm disabled:opacity-50"
+                    >
+                      {isResetting ? "Resetting…" : "Reset password"}
+                    </button>
+                    <button
+                      onClick={() => deleteStudent(s)}
+                      className="bg-red-600 text-white px-3 py-1 rounded text-sm"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
