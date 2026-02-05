@@ -83,9 +83,12 @@ import * as bcrypt from "bcryptjs";
 
 export async function POST(req) {
   try {
-    const { name, email, phone, course, rollNumber, collegeAdminUid } = await req.json();
+    const { name, email, phone, course, rollNumber, collegeAdminUid, college } = await req.json();
 
     const defaultPassword = "Sample@123";
+    const collegeCode = (college != null && String(college).trim() !== "")
+      ? String(college).trim()
+      : "_";
 
     // Create Firebase Auth user
     const user = await adminAuth.createUser({
@@ -103,6 +106,7 @@ export async function POST(req) {
       phone,
       course,
       rollNumber,
+      college: collegeCode,
       passwordHash: hashedPassword,
       defaultPassword: true,
       createdAt: new Date(),
@@ -110,7 +114,14 @@ export async function POST(req) {
     if (collegeAdminUid) {
       studentData.collegeAdminUid = collegeAdminUid;
     }
-    await adminDb.collection("students").add(studentData);
+
+    // Schema: students/{collegeCode}/ids/{uid}
+    await adminDb
+      .collection("students")
+      .doc(collegeCode)
+      .collection("ids")
+      .doc(user.uid)
+      .set(studentData);
 
     return NextResponse.json({ success: true });
   } catch (error) {

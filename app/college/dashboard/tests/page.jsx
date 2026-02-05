@@ -10,8 +10,13 @@ import {
   doc,
   updateDoc,
   onSnapshot,
+  setDoc,
+  getDocs,
+  getDoc,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase";
+import { questionDb } from "@/lib/firebaseQuestionDb";
+import { onAuthStateChanged } from "firebase/auth";
 
 /* ================= MAIN PAGE ================= */
 
@@ -42,15 +47,54 @@ export default function Page() {
   };
 
   const [qData, setQData] = useState(emptyQuestion);
+  const [collegeCode, setCollegeCode] = useState(null);
 
-  /* ================= LOAD TESTS ================= */
+  /* ================= COLLEGE CODE (for question DB) ================= */
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "tests"), (snap) => {
+    return onAuthStateChanged(auth, async (user) => {
+      if (!user?.uid) {
+        setCollegeCode(null);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.role === "collegeAdmin") {
+            setCollegeCode(data.collegeShort ?? null);
+          } else if (data.collegeAdminUid) {
+            const adminSnap = await getDoc(doc(db, "users", data.collegeAdminUid));
+            const adminData = adminSnap.exists() ? adminSnap.data() : {};
+            setCollegeCode(adminData.collegeShort ?? null);
+          } else {
+            setCollegeCode(null);
+          }
+        } else {
+          setCollegeCode(null);
+        }
+      } catch {
+        setCollegeCode(null);
+      }
+    });
+  }, []);
+
+  /* ================= LOAD TESTS (questionDb only – this college) ================= */
+
+  useEffect(() => {
+    const code = (collegeCode != null && String(collegeCode).trim() !== "")
+      ? String(collegeCode).trim()
+      : null;
+    if (!code) {
+      setTests([]);
+      return;
+    }
+    const testsRef = collection(questionDb, code);
+    const unsub = onSnapshot(testsRef, (snap) => {
       setTests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
     return () => unsub();
-  }, []);
+  }, [collegeCode]);
 
   /* ================= SCROLL TO TOP ================= */
 
@@ -74,7 +118,11 @@ export default function Page() {
 
   const createTest = async () => {
     if (!testName || !duration || !testType) return alert("Fill all fields");
-    await addDoc(collection(db, "tests"), {
+    const code = (collegeCode != null && String(collegeCode).trim() !== "")
+      ? String(collegeCode).trim()
+      : null;
+    if (!code) return alert("College code not found. Please ensure you are linked to a college.");
+    await addDoc(collection(questionDb, code), {
       name: testName,
       duration: Number(duration),
       testType: testType,
@@ -87,17 +135,23 @@ export default function Page() {
   const editTest = async (t) => {
     const name = prompt("Edit Test Name", t.name);
     const time = prompt("Edit Duration", t.duration);
-    const testType = prompt("Edit Test Type", t.testType || "");
-    if (!name || !time || !testType) return;
-    await updateDoc(doc(db, "tests", t.id), {
+    const typeVal = prompt("Edit Test Type (e.g. JEE Mains, JEE Advance, EAMCET)", t.testType || "");
+    if (!name || !time || !typeVal) return;
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) return;
+    await updateDoc(doc(questionDb, code, t.id), {
       name,
       duration: Number(time),
-      testType,
+      testType: typeVal,
     });
   };
 
   const deleteTest = async (id) => {
-    await deleteDoc(doc(db, "tests", id));
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) return;
+    const qSnap = await getDocs(collection(questionDb, code, id, "questions"));
+    await Promise.all(qSnap.docs.map((d) => deleteDoc(doc(questionDb, code, id, "questions", d.id))));
+    await deleteDoc(doc(questionDb, code, id));
     if (selectedTest?.id === id) setSelectedTest(null);
     setExpandedTests(prev => {
       const newSet = new Set(prev);
@@ -230,76 +284,67 @@ export default function Page() {
     }
   };
 
-  /* ================= SAVE QUESTION ================= */
+  /* ================= SAVE QUESTION (questionDb only) ================= */
 
   const saveQuestion = async () => {
     if (!selectedTest?.id) return;
     if (!qData.text || qData.correctAnswers.length === 0)
       return alert("Question & correct answer required");
 
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) return alert("College code not found.");
+
     let questionId;
-    
+
     if (editingQuestion) {
       questionId = editingQuestion.id;
     } else {
-      // Create question first to get ID
-      const newQuestionRef = await addDoc(
-        collection(db, "tests", selectedTest.id, "questions"),
-        {
-          text: qData.text,
-          options: qData.options,
-          optionImages: [],
-          optionImagePublicIds: [],
-          correctAnswers: qData.correctAnswers,
-          isMultiple: qData.correctAnswers.length > 1,
-          imageUrl: "",
-          imagePublicId: "",
-        }
-      );
+      const questionsRef = collection(questionDb, code, selectedTest.id, "questions");
+      const newQuestionRef = await addDoc(questionsRef, {
+        text: qData.text,
+        options: qData.options,
+        optionImages: [],
+        optionImagePublicIds: [],
+        correctAnswers: qData.correctAnswers,
+        isMultiple: qData.correctAnswers.length > 1,
+        imageUrl: "",
+        imagePublicId: "",
+        subject: qData.subject || "",
+      });
       questionId = newQuestionRef.id;
     }
 
-    // Initialize final values
     let finalImageUrl = qData.imageUrl || "";
     let finalImagePublicId = qData.imagePublicId || "";
     const finalOptionImages = [...(qData.optionImages || [])];
     const finalOptionImagePublicIds = [...(qData.optionImagePublicIds || [])];
 
-    // Upload all images in parallel (for new questions)
     if (!editingQuestion) {
       const uploadPromises = [];
-      
-      // Queue question image upload
       if (qData.questionImageFile) {
         uploadPromises.push(
-          uploadImage(qData.questionImageFile, questionId, null, "question")
-            .then(result => {
-              if (result) {
-                finalImageUrl = result.url;
-                finalImagePublicId = result.publicId;
-              }
-            })
+          uploadImage(qData.questionImageFile, questionId, null, "question").then((result) => {
+            if (result) {
+              finalImageUrl = result.url;
+              finalImagePublicId = result.publicId;
+            }
+          })
         );
       }
-      
-      // Queue all option image uploads
       if (qData.optionImageFiles) {
         qData.optionImageFiles.forEach((file, i) => {
           if (file) {
             uploadPromises.push(
-              uploadImage(file, questionId, i, "option")
-                .then(result => {
-                  if (result) {
-                    finalOptionImages[i] = result.url;
-                    finalOptionImagePublicIds[i] = result.publicId;
-                  }
-                })
+              uploadImage(file, questionId, i, "option").then((result) => {
+                if (result) {
+                  finalOptionImages[i] = result.url;
+                  finalOptionImagePublicIds[i] = result.publicId;
+                }
+              })
             );
           }
         });
       }
-      
-      // Execute all uploads in parallel
       await Promise.all(uploadPromises);
     }
 
@@ -316,7 +361,7 @@ export default function Page() {
     };
 
     await updateDoc(
-      doc(db, "tests", selectedTest.id, "questions", questionId),
+      doc(questionDb, code, selectedTest.id, "questions", questionId),
       payload
     );
 
@@ -370,13 +415,15 @@ export default function Page() {
       });
     }
 
-    // Upload all questions in parallel batches
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) return alert("College code not found.");
+
     const BATCH_SIZE = 10;
-    const collectionRef = collection(db, "tests", selectedTest.id, "questions");
-    
+    const questionsRef = collection(questionDb, code, selectedTest.id, "questions");
+
     for (let i = 0; i < questionsToAdd.length; i += BATCH_SIZE) {
       const batch = questionsToAdd.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map(q => addDoc(collectionRef, q)));
+      await Promise.all(batch.map((q) => addDoc(questionsRef, q)));
     }
 
     alert("Excel upload complete");
@@ -494,6 +541,7 @@ export default function Page() {
         {selectedTest && (
         <QuestionSection
           test={selectedTest}
+          collegeCode={collegeCode}
           qData={qData}
           setQData={setQData}
           saveQuestion={saveQuestion}
@@ -545,6 +593,7 @@ export default function Page() {
 
 function QuestionSection({
   test,
+  collegeCode,
   qData,
   setQData,
   saveQuestion,
@@ -561,14 +610,19 @@ function QuestionSection({
   const [showFormat, setShowFormat] = useState(false);
 
   useEffect(() => {
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) {
+      setQuestions([]);
+      return;
+    }
     const unsub = onSnapshot(
-      collection(db, "tests", test.id, "questions"),
+      collection(questionDb, code, test.id, "questions"),
       (snap) => {
         setQuestions(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       }
     );
     return () => unsub();
-  }, [test.id]);
+  }, [test.id, collegeCode]);
 
   const addOption = () =>
     setQData((p) => ({ 
@@ -1084,9 +1138,11 @@ function QuestionSection({
                     });
                   }
                   
-                  // Execute all deletions in parallel, then delete question
                   await Promise.all(deletePromises);
-                  await deleteDoc(doc(db, "tests", test.id, "questions", q.id));
+                  const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+                  if (code) {
+                    await deleteDoc(doc(questionDb, code, test.id, "questions", q.id));
+                  }
                 }}
                 className="bg-red-600 text-white px-3 py-1 rounded"
               >

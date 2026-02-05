@@ -20,6 +20,7 @@ export default function CollegeDetailPage() {
   const [maxStudents, setMaxStudents] = useState("");
   const [maxCollegeUsers, setMaxCollegeUsers] = useState("");
   const [amountPerStudent, setAmountPerStudent] = useState("");
+  const [collegeShort, setCollegeShort] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
@@ -52,6 +53,7 @@ export default function CollegeDetailPage() {
         setMaxStudents(data.maxStudents != null ? String(data.maxStudents) : "");
         setMaxCollegeUsers(data.maxCollegeUsers != null ? String(data.maxCollegeUsers) : "");
         setAmountPerStudent(data.amountPerStudent != null ? String(data.amountPerStudent) : "");
+        setCollegeShort(data.collegeShort != null ? String(data.collegeShort) : "");
       } catch (err) {
         console.error(err);
         setError("Failed to load college.");
@@ -108,6 +110,7 @@ export default function CollegeDetailPage() {
         maxStudents: studentsNum,
         maxCollegeUsers: usersNum,
         amountPerStudent: amountNum,
+        collegeShort: (collegeShort || "").trim() || null,
         updatedAt: serverTimestamp(),
       };
       await updateDoc(doc(db, "users", id), updates);
@@ -215,6 +218,19 @@ export default function CollegeDetailPage() {
               Set students/user limits and amount per student. Save to update.
             </p>
             <form onSubmit={handleSaveLimits} className="space-y-4 max-w-sm">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  College short (display name / code)
+                </label>
+                <input
+                  type="text"
+                  value={collegeShort}
+                  onChange={(e) => setCollegeShort(e.target.value)}
+                  placeholder="e.g. ABC, XYZ College"
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+                <p className="text-xs text-gray-500 mt-1">Shown in admission form and on student list.</p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Number of students allowed

@@ -72,9 +72,9 @@ function ManagePageContent() {
       permission: "manage-classes",
     },
     {
-      title: "Our Test",
-      description: "Unlock default tests by our",
-      path: "./manage/tests",
+      title: "RankSprint Test",
+      description: "Unlock default tests by RankSprint",
+      path: "./manage/srtest",
       permission: "manage-questions", // Assuming this maps to questions/tests
     },
   ];

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import * as XLSX from "xlsx";
 
-export default function StudentUpload({ onSuccess, collegeAdminUid, maxStudents, currentStudentCount }) {
+export default function StudentUpload({ onSuccess, collegeAdminUid, collegeCode, maxStudents, currentStudentCount }) {
   const [result, setResult] = useState(null);
 
   const handleUpload = async (e) => {
@@ -40,6 +40,7 @@ export default function StudentUpload({ onSuccess, collegeAdminUid, maxStudents,
 
     const body = { students: payload };
     if (collegeAdminUid) body.collegeAdminUid = collegeAdminUid;
+    if (collegeCode != null) body.college = collegeCode;
     const res = await fetch("/college/api/bulk-create-students", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

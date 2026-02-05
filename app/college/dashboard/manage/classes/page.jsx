@@ -1,86 +1,26 @@
-// "use client";
-
-// import { useEffect, useState } from "react";
-// import { collection, addDoc, getDocs, serverTimestamp } from "firebase/firestore";
-// import { auth, db } from "@/lib/firebase";
-// import { useRouter } from "next/navigation";
-
-// export default function ClassesPage() {
-//   const [className, setClassName] = useState("");
-//   const [classes, setClasses] = useState([]);
-//   const router = useRouter();
-
-//   const fetchClasses = async () => {
-//     const snap = await getDocs(collection(db, "classes"));
-//     setClasses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-//   };
-
-//   useEffect(() => {
-//     fetchClasses();
-//   }, []);
-
-//   const createClass = async () => {
-//     if (!className) return alert("Enter class name");
-
-//     await addDoc(collection(db, "classes"), {
-//       name: className,
-//       createdBy: auth.currentUser.uid,
-//       createdAt: serverTimestamp(),
-//     });
-
-//     setClassName("");
-//     fetchClasses();
-//   };
-
-//   return (
-//     <div className="p-6 space-y-4">
-//       <h1 className="text-2xl font-bold">Manage Classes</h1>
-
-//       <div className="flex gap-2">
-//         <input
-//           value={className}
-//           onChange={(e) => setClassName(e.target.value)}
-//           placeholder="Class name"
-//           className="border p-2 rounded"
-//         />
-//         <button onClick={createClass} className="bg-cyan-500 px-4 rounded text-white">
-//           Create
-//         </button>
-//       </div>
-
-//       <ul className="space-y-2">
-//         {classes.map(cls => (
-//           <li
-//             key={cls.id}
-//             className="border p-3 rounded cursor-pointer hover:bg-gray-100"
-//             onClick={() => router.push(`/college/dashboard/manage/classes/${cls.id}`)}
-//           >
-//             {cls.name}
-//           </li>
-//         ))}
-//       </ul>
-//     </div>
-//   );
-// }
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   collection,
   addDoc,
   getDocs,
   serverTimestamp,
   doc,
+  getDoc,
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { Pencil, Trash2, Check, X, Plus } from "lucide-react";
 import PermissionRoute from "@/components/PermissionRoute";
 
+// Schema: classes (collection) → collegeCode (doc) → items (subcollection) → classId (doc) with { name, ... }
+
 function ClassesPageContent() {
+  const [collegeCode, setCollegeCode] = useState(null);
   const [className, setClassName] = useState("");
   const [classes, setClasses] = useState([]);
   const [editingId, setEditingId] = useState(null);
@@ -89,21 +29,57 @@ function ClassesPageContent() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const fetchClasses = async () => {
-    const snap = await getDocs(collection(db, "classes"));
-    setClasses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-  };
+  /* Resolve college code (collegeAdmin → collegeShort; collegeuser → admin's collegeShort) */
+  useEffect(() => {
+    return onAuthStateChanged(auth, async (user) => {
+      if (!user?.uid) {
+        setCollegeCode(null);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.role === "collegeAdmin") {
+            setCollegeCode(data.collegeShort ?? null);
+          } else if (data.collegeAdminUid) {
+            const adminSnap = await getDoc(doc(db, "users", data.collegeAdminUid));
+            const adminData = adminSnap.exists() ? adminSnap.data() : {};
+            setCollegeCode(adminData.collegeShort ?? null);
+          } else {
+            setCollegeCode(null);
+          }
+        } else {
+          setCollegeCode(null);
+        }
+      } catch {
+        setCollegeCode(null);
+      }
+    });
+  }, []);
+
+  const fetchClasses = useCallback(async () => {
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) {
+      setClasses([]);
+      return;
+    }
+    const snap = await getDocs(collection(db, "classes", code, "items"));
+    setClasses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  }, [collegeCode]);
 
   useEffect(() => {
     fetchClasses();
-  }, []);
+  }, [fetchClasses]);
 
   const createClass = async () => {
     if (!className.trim()) return;
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) return;
 
     setLoading(true);
-    await addDoc(collection(db, "classes"), {
-      name: className,
+    await addDoc(collection(db, "classes", code, "items"), {
+      name: className.trim(),
       createdBy: auth.currentUser.uid,
       createdAt: serverTimestamp(),
     });
@@ -119,16 +95,21 @@ function ClassesPageContent() {
 
   const saveEdit = async (id) => {
     if (!editingName.trim()) return;
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) return;
 
-    await updateDoc(doc(db, "classes", id), {
-      name: editingName,
+    await updateDoc(doc(db, "classes", code, "items", id), {
+      name: editingName.trim(),
     });
     setEditingId(null);
     fetchClasses();
   };
 
   const confirmDelete = async () => {
-    await deleteDoc(doc(db, "classes", deletingId));
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) return;
+
+    await deleteDoc(doc(db, "classes", code, "items", deletingId));
     setDeletingId(null);
     fetchClasses();
   };
@@ -143,7 +124,14 @@ function ClassesPageContent() {
         </p>
       </div>
 
+      {!collegeCode && (
+        <p className="text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          College code not found. Only college admins or users linked to a college can manage classes.
+        </p>
+      )}
+
       {/* Create Class */}
+      {collegeCode && (
       <div className="bg-white rounded-xl shadow-sm p-4 flex gap-3">
         <input
           value={className}
@@ -160,15 +148,17 @@ function ClassesPageContent() {
           Create
         </button>
       </div>
+      )}
 
       {/* Empty State */}
-      {classes.length === 0 && (
+      {collegeCode && classes.length === 0 && (
         <div className="text-center text-gray-500 py-10">
           No classes created yet
         </div>
       )}
 
       {/* Class List */}
+      {collegeCode && (
       <div className="grid gap-3">
         {classes.map((cls) => (
           <div
@@ -236,6 +226,7 @@ function ClassesPageContent() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Delete Modal */}
       {deletingId && (

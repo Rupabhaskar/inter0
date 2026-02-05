@@ -20,12 +20,14 @@ export default function SuperAdminDashboardPage() {
   const [collegeAdmins, setCollegeAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState(null);
 
   // Create form state
   const [showForm, setShowForm] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState("");
   const [collegeName, setCollegeName] = useState("");
+  const [collegeShort, setCollegeShort] = useState("");
   const [email, setEmail] = useState("");
   const [defaultPassword, setDefaultPassword] = useState("");
   const [contactNumber, setContactNumber] = useState("");
@@ -61,6 +63,7 @@ export default function SuperAdminDashboardPage() {
     setShowForm(true);
     setFormError("");
     setCollegeName("");
+    setCollegeShort("");
     setEmail("");
     setDefaultPassword("");
     setContactNumber("");
@@ -112,6 +115,7 @@ export default function SuperAdminDashboardPage() {
         email: trimEmail,
         role: "collegeAdmin",
         collegeName: (collegeName || "").trim() || null,
+        collegeShort: (collegeShort || "").trim() || null,
         initialPassword: trimPassword,
         contactNumber: (contactNumber || "").trim() || null,
         address: (address || "").trim() || null,
@@ -132,6 +136,29 @@ export default function SuperAdminDashboardPage() {
       }
     } finally {
       setFormLoading(false);
+    }
+  };
+
+  const handleDeleteCollege = async (e, user) => {
+    e.stopPropagation();
+    const name = user.collegeName || user.name || user.email || "this college";
+    if (!confirm(`Are you sure you want to delete "${name}"? This will remove the college admin account and cannot be undone.`)) {
+      return;
+    }
+    setDeletingId(user.id);
+    try {
+      const res = await fetch("/superadmin/api/delete-college", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: user.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete");
+      setCollegeAdmins((prev) => prev.filter((c) => c.id !== user.id));
+    } catch (err) {
+      alert(err.message || "Failed to delete college admin.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -178,10 +205,12 @@ export default function SuperAdminDashboardPage() {
                 <tr className="text-left text-gray-500 border-b">
                   <th className="p-3 font-medium">#</th>
                   <th className="p-3 font-medium">College</th>
+                  <th className="p-3 font-medium">Short code</th>
                   <th className="p-3 font-medium">Email</th>
                   <th className="p-3 font-medium">Default Password</th>
                   <th className="p-3 font-medium">Contact Number</th>
                   <th className="p-3 font-medium">Address / Location</th>
+                  <th className="p-3 font-medium w-24">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -195,6 +224,9 @@ export default function SuperAdminDashboardPage() {
                     <td className="p-3 font-medium text-blue-600">
                       {user.collegeName || user.name || user.email || "—"}
                     </td>
+                    <td className="p-3 font-mono font-medium">
+                      {user.collegeShort || "—"}
+                    </td>
                     <td className="p-3">{user.email || "—"}</td>
                     <td className="p-3">
                       {user.initialPassword ?? user.password ?? "—"}
@@ -202,6 +234,16 @@ export default function SuperAdminDashboardPage() {
                     <td className="p-3">{user.contactNumber || "—"}</td>
                     <td className="p-3 max-w-xs truncate" title={user.address}>
                       {user.address || "—"}
+                    </td>
+                    <td className="p-3">
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteCollege(e, user)}
+                        disabled={deletingId === user.id}
+                        className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {deletingId === user.id ? "Deleting..." : "Delete"}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -243,6 +285,20 @@ export default function SuperAdminDashboardPage() {
                   className="w-full px-3 py-2 border rounded-lg"
                   required
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  College short code
+                </label>
+                <input
+                  type="text"
+                  value={collegeShort}
+                  onChange={(e) => setCollegeShort(e.target.value.toUpperCase())}
+                  placeholder="e.g. SCRRC (Sir Catamachili Ram Reddy College)"
+                  className="w-full px-3 py-2 border rounded-lg font-mono"
+                />
+                <p className="text-xs text-gray-500 mt-1">Used in admission form and student list. Leave empty to set later in college settings.</p>
               </div>
 
               <div>

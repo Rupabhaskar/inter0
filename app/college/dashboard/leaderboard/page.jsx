@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, doc, getDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { collection, collectionGroup, onSnapshot, doc, getDoc, getDocs, query, where, limit } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "@/lib/firebase";
+import { questionDb } from "@/lib/firebaseQuestionDb";
 
 export default function LeaderboardPage() {
+  const [collegeCode, setCollegeCode] = useState(null);
   const [results, setResults] = useState([]);
   const [enrichedResults, setEnrichedResults] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,32 +21,72 @@ export default function LeaderboardPage() {
 
   const viewMode = selectedSubject ? "subject" : "overall"; // overall total marks OR subject-wise
 
-  /* ================= LOAD RESULTS ================= */
+  /* ================= COLLEGE CODE (logged-in college admin/user) ================= */
 
   useEffect(() => {
+    return onAuthStateChanged(auth, async (user) => {
+      if (!user?.uid) {
+        setCollegeCode(null);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.role === "collegeAdmin") {
+            setCollegeCode(data.collegeShort ?? null);
+          } else if (data.collegeAdminUid) {
+            const adminSnap = await getDoc(doc(db, "users", data.collegeAdminUid));
+            const adminData = adminSnap.exists() ? adminSnap.data() : {};
+            setCollegeCode(adminData.collegeShort ?? null);
+          } else {
+            setCollegeCode(null);
+          }
+        } else {
+          setCollegeCode(null);
+        }
+      } catch {
+        setCollegeCode(null);
+      }
+    });
+  }, []);
+
+  /* ================= LOAD RESULTS: results (collection) → byCollege (doc) → collegeCode (subcollection) ================= */
+
+  useEffect(() => {
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) {
+      setResults([]);
+      setEnrichedResults([]);
+      setLoading(false);
+      return;
+    }
+
+    const resultsRef = collection(db, "results", "byCollege", code);
     const unsub = onSnapshot(
-      collection(db, "results"),
+      resultsRef,
       async (snap) => {
         try {
           const resultsData = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           setResults(resultsData);
 
-          // Enrich results with student and test data, and expand subject-wise results
           const enriched = [];
-          
+
           for (const result of resultsData) {
             let studentName = result.studentName || "Unknown";
             let studentClass = result.class || "";
             let testName = "";
             let testSubject = result.subject || "";
 
-            // Fetch student data if not already present
+            // Enrich student from students/{collegeCode}/ids if name/class missing
             const studentId = result.uid || result.studentId;
-            if (studentId && (!result.studentName || !result.class)) {
+            if (studentId && (!result.studentName || result.studentName === "Unknown" || !result.class)) {
               try {
-                const studentDoc = await getDoc(doc(db, "students", studentId));
-                if (studentDoc.exists()) {
-                  const studentData = studentDoc.data();
+                const idsGroup = collectionGroup(db, "ids");
+                const q = query(idsGroup, where("uid", "==", studentId), limit(1));
+                const studentSnap = await getDocs(q);
+                if (!studentSnap.empty) {
+                  const studentData = studentSnap.docs[0].data();
                   studentName = studentData.name || result.studentName || "Unknown";
                   studentClass = studentData.course || studentData.class || result.class || "";
                 }
@@ -52,12 +95,12 @@ export default function LeaderboardPage() {
               }
             }
 
-            // Fetch test data if not already present
-            if (result.testId && !result.subject) {
+            // Test name from questionDb: collection(collegeCode).doc(testId)
+            if (result.testId) {
               try {
-                const testDoc = await getDoc(doc(db, "tests", result.testId));
-                if (testDoc.exists()) {
-                  const testData = testDoc.data();
+                const testSnap = await getDoc(doc(questionDb, code, result.testId));
+                if (testSnap.exists()) {
+                  const testData = testSnap.data();
                   testName = testData.name || "";
                   testSubject = testData.subject || testData.name || "";
                 }
@@ -66,13 +109,10 @@ export default function LeaderboardPage() {
               }
             }
 
-            // Get testType from result
             const testType = result.testType || "";
-
             const overallMarks = result.marks ?? result.score ?? 0;
             const overallTotal = result.total ?? 0;
 
-            // Always add an OVERALL row (used when no subject selected)
             enriched.push({
               ...result,
               studentName,
@@ -85,7 +125,6 @@ export default function LeaderboardPage() {
               rowType: "overall",
             });
 
-            // Add SUBJECT rows (used only when subject selected)
             if (result.subjectWise && typeof result.subjectWise === "object") {
               Object.keys(result.subjectWise).forEach((subject) => {
                 const subjectData = result.subjectWise[subject];
@@ -102,7 +141,6 @@ export default function LeaderboardPage() {
                 });
               });
             } else {
-              // Old format: treat the single subject as a subject-row too
               const singleSubject = testSubject || result.subject || "Unknown";
               enriched.push({
                 ...result,
@@ -131,7 +169,7 @@ export default function LeaderboardPage() {
       }
     );
     return () => unsub();
-  }, []);
+  }, [collegeCode]);
 
   /* ================= FILTERED DATA ================= */
 

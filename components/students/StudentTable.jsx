@@ -1,13 +1,13 @@
 "use client";
 
-export default function StudentTable({ students, loading, onRefresh }) {
+export default function StudentTable({ students, loading, onRefresh, collegeCode = "_" }) {
   const deleteStudent = async (s) => {
     if (!confirm("Delete this student?")) return;
 
     const res = await fetch("/college/api/delete-student", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uid: s.uid, id: s.id }),
+      body: JSON.stringify({ uid: s.uid || s.id, id: s.id, collegeCode }),
     });
 
     if (res.ok) onRefresh();
@@ -21,6 +21,7 @@ export default function StudentTable({ students, loading, onRefresh }) {
           <tr>
             <th className="p-3">Roll</th>
             <th className="p-3">Name</th>
+            <th className="p-3">College</th>
             <th className="p-3">Email</th>
             <th className="p-3">Course</th>
             <th className="p-3">Action</th>
@@ -30,13 +31,13 @@ export default function StudentTable({ students, loading, onRefresh }) {
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan="5" className="p-6 text-center">
+              <td colSpan="6" className="p-6 text-center">
                 Loading...
               </td>
             </tr>
           ) : students.length === 0 ? (
             <tr>
-              <td colSpan="5" className="p-6 text-center">
+              <td colSpan="6" className="p-6 text-center">
                 No students found
               </td>
             </tr>
@@ -45,6 +46,7 @@ export default function StudentTable({ students, loading, onRefresh }) {
               <tr key={s.id} className="border-b">
                 <td className="p-3">{s.rollNumber}</td>
                 <td className="p-3">{s.name}</td>
+                <td className="p-3">{s.college ?? "—"}</td>
                 <td className="p-3">{s.email}</td>
                 <td className="p-3">{s.course}</td>
                 <td className="p-3">

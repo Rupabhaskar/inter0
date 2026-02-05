@@ -81,10 +81,10 @@
 
 import { useState } from "react";
 
-export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid }) {
+export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid, defaultCollege }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    rollNumber: "",   // ✅ added
+    rollNumber: "",
     name: "",
     email: "",
     phone: "",
@@ -101,6 +101,10 @@ export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid }) {
     try {
       const payload = { ...formData };
       if (collegeAdminUid) payload.collegeAdminUid = collegeAdminUid;
+      // College short comes from logged-in admin (defaultCollege), not from form input
+      if (defaultCollege != null && String(defaultCollege).trim() !== "") {
+        payload.college = String(defaultCollege).trim();
+      }
       const res = await fetch("/college/api/create-student", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

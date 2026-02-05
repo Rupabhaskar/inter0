@@ -4,14 +4,17 @@ import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   collection,
+  collectionGroup,
   doc,
   getDoc,
   getDocs,
   query,
   where,
+  limit,
   addDoc,
 } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
+import { questionDb } from "@/lib/firebaseQuestionDb";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 /* ================= CLOUDINARY IMAGE COMPONENT ================= */
@@ -73,19 +76,58 @@ export default function CollegeTestPage() {
   const [selectedSubject, setSelectedSubject] = useState(""); // Filter by subject
   const [markedForReview, setMarkedForReview] = useState(new Set()); // Questions marked for review
   const [visited, setVisited] = useState(new Set()); // Questions that have been visited
+  const [collegeCode, setCollegeCode] = useState(null); // For saving result under results/{collegeCode}
+  const [studentName, setStudentName] = useState(""); // From student doc (students/{collegeCode}/ids)
+  const [studentClass, setStudentClass] = useState(""); // course/class from student doc
 
-  /* ================= LOAD TEST ================= */
+  /* ================= LOAD TEST (from questionDb by student college code) ================= */
   useEffect(() => {
     const load = async () => {
-      // Fetch test and questions in parallel
+      const uid = auth.currentUser?.uid;
+      if (!uid) {
+        setLoading(false);
+        return;
+      }
+      // Get student's college code: schema students/{collegeCode}/ids/{uid}
+      const idsGroup = collectionGroup(db, "ids");
+      const studentQ = query(idsGroup, where("uid", "==", uid), limit(1));
+      const studentSnap = await getDocs(studentQ);
+      if (studentSnap.empty) {
+        setLoading(false);
+        return;
+      }
+      const studentDoc = studentSnap.docs[0];
+      const studentData = studentDoc.data();
+      // College code e.g. "SCRRC" = questionDb collection; doc(testId) has duration, name, testType; subcollection "questions"
+      const collegeCode =
+        (studentData.college != null && String(studentData.college).trim() !== "")
+          ? String(studentData.college).trim()
+          : studentDoc.ref.parent.parent.id;
+
+      // questionDb: collection(collegeCode).doc(testId) → test; collection(collegeCode, testId, "questions") → questions
+      // Fetch test and questions from questionDb
       const [testSnap, qSnap] = await Promise.all([
-        getDoc(doc(db, "tests", testId)),
-        getDocs(collection(db, "tests", testId, "questions")),
+        getDoc(doc(questionDb, collegeCode, testId)),
+        getDocs(collection(questionDb, collegeCode, testId, "questions")),
       ]);
+
+      if (!testSnap.exists()) {
+        setTest(null);
+        setQuestions([]);
+        setLoading(false);
+        return;
+      }
 
       const testData = testSnap.data();
       const questionsData = qSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
+      setCollegeCode(collegeCode);
+      setStudentName(studentData.name != null ? String(studentData.name).trim() : "");
+      setStudentClass(
+        (studentData.course != null && String(studentData.course).trim() !== "")
+          ? String(studentData.course).trim()
+          : (studentData.class != null ? String(studentData.class).trim() : "")
+      );
       setTest(testData);
       setQuestions(questionsData);
 
@@ -289,23 +331,13 @@ export default function CollegeTestPage() {
       }
     }
 
-    // Fetch student details (students collection stores uid as a field)
-    let studentName = auth.currentUser?.displayName || "Unknown";
-    let studentClass = "";
-    try {
-      const studentQ = query(
-        collection(db, "students"),
-        where("uid", "==", auth.currentUser.uid)
-      );
-      const studentSnap = await getDocs(studentQ);
-      if (!studentSnap.empty) {
-        const s = studentSnap.docs[0].data();
-        studentName = s?.name || studentName;
-        studentClass = s?.course || s?.class || "";
-      }
-    } catch (e) {
-      console.error("Student lookup failed:", e);
-    }
+    // Use student name/class from load (students/{collegeCode}/ids); fallback to auth displayName or email, never "Unknown"
+    const resultStudentName =
+      studentName ||
+      auth.currentUser?.displayName ||
+      auth.currentUser?.email?.split("@")[0] ||
+      "Student";
+    const resultStudentClass = studentClass || "";
 
     // Subject-wise result (based on question.subject)
     const subjectWise = {};
@@ -360,10 +392,11 @@ export default function CollegeTestPage() {
     });
 
     const notVisitedCount = questions.length - visited.size;
-    await addDoc(collection(db, "results"), {
+    // Schema: results (collection) → byCollege (doc) → collegeCode (subcollection) → resultId (doc) → information
+    const resultData = {
       uid: auth.currentUser.uid,
-      studentName,
-      class: studentClass,
+      studentName: resultStudentName,
+      class: resultStudentClass,
       testId,
       score,
       total: questions.length,
@@ -374,7 +407,13 @@ export default function CollegeTestPage() {
       testType: test.testType || "",
       subjectWise,
       submittedAt: new Date(),
-    });
+    };
+    if (collegeCode && String(collegeCode).trim()) {
+      const code = String(collegeCode).trim();
+      await addDoc(collection(db, "results", "byCollege", code), resultData);
+    } else {
+      await addDoc(collection(db, "results"), resultData);
+    }
 
     setFinalScore({
       score,

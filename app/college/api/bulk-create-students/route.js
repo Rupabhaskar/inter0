@@ -3,7 +3,10 @@ import { adminAuth, adminDb } from "@/lib/firebaseAdmin";
 
 export async function POST(req) {
   try {
-    const { students, collegeAdminUid } = await req.json();
+    const { students, collegeAdminUid, college: collegeCode } = await req.json();
+    const code = (collegeCode != null && String(collegeCode).trim() !== "")
+      ? String(collegeCode).trim()
+      : "_";
 
     const results = {
       created: [],
@@ -26,13 +29,20 @@ export async function POST(req) {
           email: s.Email,
           phone: s.Phone,
           course: s.Course,
+          college: code,
           defaultPassword: true,
           createdAt: new Date(),
         };
         if (collegeAdminUid) {
           studentData.collegeAdminUid = collegeAdminUid;
         }
-        await adminDb.collection("students").add(studentData);
+        // Schema: students/{collegeCode}/ids/{uid}
+        await adminDb
+          .collection("students")
+          .doc(code)
+          .collection("ids")
+          .doc(user.uid)
+          .set(studentData);
 
         results.created.push({
           rollNumber: s.RollNumber,

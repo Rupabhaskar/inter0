@@ -1,219 +1,3 @@
-// // "use client";
-
-// // import { useEffect, useState } from "react";
-// // import { useParams } from "next/navigation";
-// // import {
-// //   collection,
-// //   addDoc,
-// //   getDocs,
-// //   query,
-// //   where,
-// // } from "firebase/firestore";
-// // import { db } from "@/lib/firebase";
-
-// // export default function ClassDetailPage() {
-// //   const { id } = useParams();
-// //   const [email, setEmail] = useState("");
-// //   const [members, setMembers] = useState([]);
-
-// //   const fetchMembers = async () => {
-// //     const q = query(
-// //       collection(db, "classMembers"),
-// //       where("classId", "==", id)
-// //     );
-
-// //     const snap = await getDocs(q);
-// //     setMembers(snap.docs.map(doc => doc.data()));
-// //   };
-
-// //   useEffect(() => {
-// //     fetchMembers();
-// //   }, [id]);
-
-// //   const addMember = async () => {
-// //     if (!email) return alert("Enter email");
-
-// //     await addDoc(collection(db, "classMembers"), {
-// //       classId: id,
-// //       userEmail: email,
-// //       role: "student",
-// //     });
-
-// //     setEmail("");
-// //     fetchMembers();
-// //   };
-
-// //   return (
-// //     <div className="p-6 space-y-4">
-// //       <h1 className="text-xl font-bold">Manage Class</h1>
-
-// //       <div className="flex gap-2">
-// //         <input
-// //           placeholder="Student email"
-// //           value={email}
-// //           onChange={(e) => setEmail(e.target.value)}
-// //           className="border p-2 rounded"
-// //         />
-// //         <button onClick={addMember} className="bg-green-600 px-4 rounded text-white">
-// //           Add
-// //         </button>
-// //       </div>
-
-// //       <ul className="space-y-2">
-// //         {members.map((m, i) => (
-// //           <li key={i} className="border p-2 rounded">
-// //             {m.userEmail} ({m.role})
-// //           </li>
-// //         ))}
-// //       </ul>
-// //     </div>
-// //   );
-// // }
-
-
-// "use client";
-
-// import { useEffect, useState } from "react";
-// import { useParams } from "next/navigation";
-// import {
-//   collection,
-//   query,
-//   where,
-//   getDocs,
-//   addDoc,
-// } from "firebase/firestore";
-// import { db } from "@/lib/firebase";
-
-// export default function ManageClassPage() {
-//   const { id: classId } = useParams();
-
-//   const [rollNumber, setRollNumber] = useState("");
-//   const [results, setResults] = useState([]);
-//   const [selectedStudent, setSelectedStudent] = useState(null);
-//   const [members, setMembers] = useState([]);
-
-//   // 🔍 Search student by roll number
-//   const searchStudent = async () => {
-//     if (!rollNumber) return;
-
-//     const q = query(
-//       collection(db, "students"),
-//       where("rollNumber", "==", rollNumber)
-//     );
-
-//     const snap = await getDocs(q);
-//     const data = snap.docs.map(doc => ({
-//       id: doc.id,
-//       ...doc.data(),
-//     }));
-
-//     setResults(data);
-//     setSelectedStudent(null); // reset selection
-//   };
-
-//   // ➕ Add selected student to class
-//   const addToClass = async () => {
-//     if (!selectedStudent) {
-//       alert("Please select a student first");
-//       return;
-//     }
-
-//     await addDoc(collection(db, "classMembers"), {
-//       classId,
-//       studentId: selectedStudent.id,
-//       rollNumber: selectedStudent.rollNumber,
-//       name: selectedStudent.name,
-//     });
-
-//     alert("Student added to class");
-//     setSelectedStudent(null);
-//     setResults([]);
-//     setRollNumber("");
-//     fetchMembers();
-//   };
-
-//   // 📋 Fetch class members
-//   const fetchMembers = async () => {
-//     const q = query(
-//       collection(db, "classMembers"),
-//       where("classId", "==", classId)
-//     );
-//     const snap = await getDocs(q);
-//     setMembers(snap.docs.map(doc => doc.data()));
-//   };
-
-//   useEffect(() => {
-//     fetchMembers();
-//   }, []);
-
-//   return (
-//     <div className="p-6 space-y-4">
-//       <h1 className="text-xl font-bold">Add Student to Class</h1>
-
-//       {/* Search */}
-//       <div className="flex gap-2">
-//         <input
-//           placeholder="Enter Roll Number"
-//           value={rollNumber}
-//           onChange={(e) => setRollNumber(e.target.value)}
-//           className="border p-2 rounded"
-//         />
-//         <button
-//           onClick={searchStudent}
-//           className="bg-blue-600 text-white px-4 rounded"
-//         >
-//           Search
-//         </button>
-//       </div>
-
-//       {/* Search Results */}
-//       {results.length > 0 && (
-//         <div className="border rounded p-2 space-y-2">
-//           {results.map((s) => (
-//             <div
-//               key={s.id}
-//               onClick={() => setSelectedStudent(s)}
-//               className={`p-2 border rounded cursor-pointer
-//                 ${
-//                   selectedStudent?.id === s.id
-//                     ? "bg-blue-100 border-blue-500"
-//                     : "hover:bg-gray-100"
-//                 }`}
-//             >
-//               <p className="font-medium">{s.name}</p>
-//               <p className="text-sm text-gray-600">
-//                 Roll No: {s.rollNumber}
-//               </p>
-//             </div>
-//           ))}
-//         </div>
-//       )}
-
-//       {/* Add Button */}
-//       <button
-//         onClick={addToClass}
-//         disabled={!selectedStudent}
-//         className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50"
-//       >
-//         Add to Class
-//       </button>
-
-//       {/* Class Members */}
-//       <div>
-//         <h2 className="font-semibold mt-6 mb-2">Class Members</h2>
-//         <ul className="space-y-1">
-//           {members.map((m, i) => (
-//             <li key={i} className="border p-2 rounded">
-//               {m.name} ({m.rollNumber})
-//             </li>
-//           ))}
-//         </ul>
-//       </div>
-//     </div>
-//   );
-// }
-
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -224,45 +8,83 @@ import {
   where,
   getDocs,
   addDoc,
+  doc,
+  getDoc,
+  deleteDoc,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { Search, UserPlus } from "lucide-react";
+import { onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "@/lib/firebase";
+import { Search, UserPlus, UserMinus } from "lucide-react";
 
 export default function ManageClassPage() {
   const { id: classId } = useParams();
 
+  const [collegeCode, setCollegeCode] = useState(null);
   const [rollNumber, setRollNumber] = useState("");
   const [results, setResults] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [removingId, setRemovingId] = useState(null);
 
-  // 🔍 Search student
+  useEffect(() => {
+    return onAuthStateChanged(auth, async (user) => {
+      if (!user?.uid) {
+        setCollegeCode(null);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.role === "collegeAdmin") {
+            setCollegeCode(data.collegeShort ?? null);
+          } else if (data.collegeAdminUid) {
+            const adminSnap = await getDoc(doc(db, "users", data.collegeAdminUid));
+            setCollegeCode(adminSnap.exists() ? (adminSnap.data().collegeShort ?? null) : null);
+          } else {
+            setCollegeCode(null);
+          }
+        } else {
+          setCollegeCode(null);
+        }
+      } catch {
+        setCollegeCode(null);
+      }
+    });
+  }, []);
+
+  // Get studentId from students/{collegeCode}/ids – only search within this college's students
   const searchStudent = async () => {
     if (!rollNumber.trim()) return;
-
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) {
+      alert("College code not found. Cannot search students.");
+      return;
+    }
     setLoading(true);
-    const q = query(
-      collection(db, "students"),
-      where("rollNumber", "==", rollNumber)
-    );
-
+    const idsRef = collection(db, "students", code, "ids");
+    const q = query(idsRef, where("rollNumber", "==", rollNumber.trim()));
     const snap = await getDocs(q);
-    setResults(
-      snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    );
+    setResults(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     setSelectedStudent(null);
     setLoading(false);
   };
 
-  // ➕ Add student
+  // Add student to class – studentId is the doc id from students/{collegeCode}/ids
   const addToClass = async () => {
     if (!selectedStudent) return;
+    const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
+    if (!code) {
+      alert("College code not found. Cannot add to class.");
+      return;
+    }
 
     await addDoc(collection(db, "classMembers"), {
       classId,
       studentId: selectedStudent.id,
-      rollNumber: selectedStudent.rollNumber,
+      collegeCode: code,
+        rollNumber: selectedStudent.rollNumber,
       name: selectedStudent.name,
     });
 
@@ -279,12 +101,28 @@ export default function ManageClassPage() {
       where("classId", "==", classId)
     );
     const snap = await getDocs(q);
-    setMembers(snap.docs.map(doc => doc.data()));
+    setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  };
+
+  // ➖ Remove student from class
+  const removeFromClass = async (member) => {
+    if (!member?.id) return;
+    if (!confirm(`Remove ${member.name || member.rollNumber} from this class?`)) return;
+    setRemovingId(member.id);
+    try {
+      await deleteDoc(doc(db, "classMembers", member.id));
+      await fetchMembers();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to remove student");
+    } finally {
+      setRemovingId(null);
+    }
   };
 
   useEffect(() => {
     fetchMembers();
-  }, []);
+  }, [classId]);
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
@@ -297,10 +135,16 @@ export default function ManageClassPage() {
         </p>
       </div>
 
-      {/* Search Card */}
+      {!collegeCode && (
+        <p className="text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          College code not found. Students are loaded from your college only.
+        </p>
+      )}
+
+      {/* Search Card – students from students/{collegeCode}/ids */}
       <div className="bg-white rounded-xl shadow-sm p-4 space-y-3">
         <label className="text-sm font-medium text-gray-600">
-          Search by Roll Number
+          Search by Roll Number 
         </label>
 
         <div className="flex gap-3">
@@ -312,7 +156,7 @@ export default function ManageClassPage() {
           />
           <button
             onClick={searchStudent}
-            disabled={loading}
+            disabled={loading || !collegeCode}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
             <Search size={18} />
@@ -362,7 +206,7 @@ export default function ManageClassPage() {
       <div className="flex justify-end">
         <button
           onClick={addToClass}
-          disabled={!selectedStudent}
+          disabled={!selectedStudent || !collegeCode}
           className="flex items-center gap-2 bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
         >
           <UserPlus size={18} />
@@ -380,12 +224,21 @@ export default function ManageClassPage() {
           </p>
         ) : (
           <ul className="divide-y">
-            {members.map((m, i) => (
-              <li key={i} className="py-2 flex justify-between">
-                <span>{m.name}</span>
-                <span className="text-gray-500">
-                  {m.rollNumber}
-                </span>
+            {members.map((m) => (
+              <li key={m.id} className="py-2 flex justify-between items-center gap-2">
+                <div>
+                  <span className="font-medium">{m.name}</span>
+                  <span className="text-gray-500 ml-2">({m.rollNumber})</span>
+                </div>
+                <button
+                  onClick={() => removeFromClass(m)}
+                  disabled={removingId === m.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Remove from class"
+                >
+                  <UserMinus size={16} />
+                  Remove
+                </button>
               </li>
             ))}
           </ul>

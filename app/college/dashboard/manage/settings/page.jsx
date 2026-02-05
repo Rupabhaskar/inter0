@@ -9,6 +9,7 @@ import PermissionRoute from "@/components/PermissionRoute";
 function CreateUserPageContent() {
   const [currentUserUid, setCurrentUserUid] = useState(null);
   const [collegeScopeUid, setCollegeScopeUid] = useState(null); // uid of college admin (scope for listing/creating)
+  const [collegeCode, setCollegeCode] = useState(null); // college short code (unique per college)
   const [isCollegeAdmin, setIsCollegeAdmin] = useState(false);
   const [maxCollegeUsers, setMaxCollegeUsers] = useState(null); // null = no limit
   const [name, setName] = useState("");
@@ -63,6 +64,7 @@ function CreateUserPageContent() {
       setCurrentUserUid(user?.uid || null);
       if (!user?.uid) {
         setCollegeScopeUid(null);
+        setCollegeCode(null);
         setMaxCollegeUsers(null);
         setIsCollegeAdmin(false);
         return;
@@ -75,38 +77,74 @@ function CreateUserPageContent() {
           setIsCollegeAdmin(isAdmin);
           if (isAdmin) {
             setCollegeScopeUid(user.uid);
+            setCollegeCode(data.collegeShort ?? null);
             setMaxCollegeUsers(data.maxCollegeUsers ?? null);
           } else {
             setCollegeScopeUid(data.collegeAdminUid || null);
             if (data.collegeAdminUid) {
               const adminSnap = await getDoc(doc(db, "users", data.collegeAdminUid));
-              setMaxCollegeUsers(adminSnap.exists() ? (adminSnap.data().maxCollegeUsers ?? null) : null);
+              const adminData = adminSnap.exists() ? adminSnap.data() : {};
+              setCollegeCode(adminData.collegeShort ?? null);
+              setMaxCollegeUsers(adminData.maxCollegeUsers ?? null);
             } else {
+              setCollegeCode(null);
               setMaxCollegeUsers(null);
             }
           }
         } else {
           setIsCollegeAdmin(false);
           setCollegeScopeUid(null);
+          setCollegeCode(null);
           setMaxCollegeUsers(null);
         }
       } catch {
         setIsCollegeAdmin(false);
         setCollegeScopeUid(null);
+        setCollegeCode(null);
         setMaxCollegeUsers(null);
       }
     });
   }, []);
 
-  // Fetch users (scoped to this college when collegeScopeUid is used)
+  // Fetch users scoped by college: prefer collegeCode (unique), fallback to collegeAdminUid
   const fetchUsers = useCallback(async () => {
     setLoadingUsers(true);
     try {
-      if (!collegeScopeUid) {
+      if (!collegeScopeUid && !collegeCode) {
         const snap = await getDocs(collection(db, "users"));
         const usersData = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((u) => u.role === "collegeuser");
+        usersData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        setUsers(usersData);
+        return;
+      }
+      // If we have college code, fetch users with that code; else use collegeAdminUid
+      if (collegeCode) {
+        const qByCode = query(
+          collection(db, "users"),
+          where("role", "==", "collegeuser"),
+          where("collegeCode", "==", collegeCode)
+        );
+        const snapCode = await getDocs(qByCode);
+        let usersData = snapCode.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // Also include users with collegeAdminUid but no collegeCode (legacy)
+        if (collegeScopeUid) {
+          const qByAdmin = query(
+            collection(db, "users"),
+            where("role", "==", "collegeuser"),
+            where("collegeAdminUid", "==", collegeScopeUid)
+          );
+          const snapAdmin = await getDocs(qByAdmin);
+          const byAdmin = snapAdmin.docs.map((d) => ({ id: d.id, ...d.data() }));
+          const seen = new Set(usersData.map((u) => u.id));
+          byAdmin.forEach((u) => {
+            if (!seen.has(u.id)) {
+              usersData.push(u);
+              seen.add(u.id);
+            }
+          });
+        }
         usersData.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
         setUsers(usersData);
         return;
@@ -126,7 +164,7 @@ function CreateUserPageContent() {
     } finally {
       setLoadingUsers(false);
     }
-  }, [collegeScopeUid]);
+  }, [collegeScopeUid, collegeCode]);
 
   useEffect(() => {
     fetchUsers();
@@ -274,6 +312,9 @@ function CreateUserPageContent() {
       if (collegeScopeUid) {
         userData.collegeAdminUid = collegeScopeUid;
       }
+      if (collegeCode != null && String(collegeCode).trim() !== "") {
+        userData.collegeCode = String(collegeCode).trim();
+      }
       await setDoc(doc(db, "users", uid), userData);
 
       // ✅ Clear form only (stay on page)
@@ -388,6 +429,11 @@ function CreateUserPageContent() {
         <div className="flex justify-between items-center flex-wrap gap-2">
           <div>
             <h1 className="text-3xl font-bold text-gray-800">User Management</h1>
+            {collegeCode && (
+              <p className="text-sm text-gray-600 mt-1">
+                College code: <span className="font-mono font-semibold">{collegeCode}</span>
+              </p>
+            )}
             {maxCollegeUsers != null && (
               <p className="text-sm text-gray-500 mt-1">
                 College user limit: {users.length} of {maxCollegeUsers} used
@@ -549,6 +595,7 @@ function CreateUserPageContent() {
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Email</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">College code</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Role</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Permissions</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Created</th>
@@ -560,6 +607,7 @@ function CreateUserPageContent() {
                     <tr key={user.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm">{user.name || "—"}</td>
                       <td className="px-4 py-3 text-sm">{user.email || "—"}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-gray-700">{user.collegeCode || "—"}</td>
                       <td className="px-4 py-3 text-sm">
                         <span
                           className={`px-2 py-1 rounded-full text-xs font-medium ${

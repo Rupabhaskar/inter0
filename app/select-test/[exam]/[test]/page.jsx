@@ -4,11 +4,13 @@ import { use, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   collection,
+  collectionGroup,
   doc,
   getDoc,
   getDocs,
   query,
   where,
+  limit,
   addDoc,
 } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
@@ -254,16 +256,37 @@ export default function ExamTestPage({ params }) {
 
     let studentName = auth.currentUser?.displayName || "Unknown";
     let studentClass = "";
+    let collegeCode = null;
     try {
-      const studentQ = query(
-        collection(db, "students"),
-        where("uid", "==", auth.currentUser?.uid)
-      );
-      const studentSnap = await getDocs(studentQ);
-      if (!studentSnap.empty) {
-        const s = studentSnap.docs[0].data();
-        studentName = s?.name || studentName;
-        studentClass = s?.course || s?.class || "";
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        const idsGroup = collectionGroup(db, "ids");
+        const studentQ = query(idsGroup, where("uid", "==", uid), limit(1));
+        const studentSnap = await getDocs(studentQ);
+        if (!studentSnap.empty) {
+          const studentDoc = studentSnap.docs[0];
+          const s = studentDoc.data();
+          collegeCode =
+            (s?.college != null && String(s.college).trim() !== "")
+              ? String(s.college).trim()
+              : studentDoc.ref.parent.parent.id;
+          studentName = s?.name != null ? String(s.name).trim() : studentName;
+          studentClass =
+            (s?.course != null && String(s.course).trim() !== "")
+              ? String(s.course).trim()
+              : (s?.class != null ? String(s.class).trim() : "");
+        } else {
+          const legacyQ = query(
+            collection(db, "students"),
+            where("uid", "==", uid)
+          );
+          const legacySnap = await getDocs(legacyQ);
+          if (!legacySnap.empty) {
+            const s = legacySnap.docs[0].data();
+            studentName = s?.name || studentName;
+            studentClass = s?.course || s?.class || "";
+          }
+        }
       }
     } catch (e) {
       console.error("Student lookup failed:", e);
@@ -313,7 +336,7 @@ export default function ExamTestPage({ params }) {
       } else entry.wrong += 1;
     });
 
-    await addDoc(collection(db, "results"), {
+    const resultData = {
       uid: auth.currentUser?.uid,
       studentName,
       class: studentClass,
@@ -325,7 +348,13 @@ export default function ExamTestPage({ params }) {
       testType: test.testType || "",
       subjectWise,
       submittedAt: new Date(),
-    });
+    };
+    if (collegeCode && String(collegeCode).trim()) {
+      const code = String(collegeCode).trim();
+      await addDoc(collection(db, "results", "byCollege", code), resultData);
+    } else {
+      await addDoc(collection(db, "results"), resultData);
+    }
 
     setFinalScore({
       score,
