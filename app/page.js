@@ -93,7 +93,7 @@ export default function Home() {
           </span>
         </Link>
         <Link
-          href="/college/dashboard"
+          href="/college"
           className="text-sm font-medium text-blue-600 hover:underline"
         >
           College Login
@@ -106,7 +106,7 @@ export default function Home() {
         <div className="absolute inset-0 scale-[1.25]">
           <Image
             src={publicImages.hero.src}
-            alt={publicImages.hero.alt}
+            alt={publicImages.hero.alt} 
             fill
             priority
             className="object-cover w-full h-full"

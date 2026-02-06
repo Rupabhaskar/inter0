@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { Eye, EyeOff } from "lucide-react";
@@ -14,6 +14,33 @@ export default function CollegeLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
+
+  // First check if already logged in as college user; only then show form or redirect to dashboard
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setAuthChecking(false);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (!snap.exists()) {
+          setAuthChecking(false);
+          return;
+        }
+        const { role } = snap.data();
+        if (role === "collegeAdmin" || role === "collegeuser") {
+          router.replace("/college/dashboard");
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      setAuthChecking(false);
+    });
+    return () => unsub();
+  }, [router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -54,8 +81,16 @@ export default function CollegeLoginPage() {
     }
   };
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <p className="text-gray-600">Checking login...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="min-h-screen mt-[-25px] flex items-center justify-center bg-gray-100">
       <form
         onSubmit={handleLogin}
         className="bg-white p-8 rounded shadow w-full max-w-md"

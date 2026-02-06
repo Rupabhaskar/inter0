@@ -8,6 +8,7 @@ import {
   where,
   doc,
   setDoc,
+  updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
@@ -32,6 +33,15 @@ export default function SuperAdminDashboardPage() {
   const [defaultPassword, setDefaultPassword] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [address, setAddress] = useState("");
+
+  // Edit form state
+  const [editingCollege, setEditingCollege] = useState(null);
+  const [editCollegeName, setEditCollegeName] = useState("");
+  const [editCollegeShort, setEditCollegeShort] = useState("");
+  const [editContactNumber, setEditContactNumber] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const fetchCollegeAdmins = async () => {
     setLoading(true);
@@ -73,6 +83,55 @@ export default function SuperAdminDashboardPage() {
   const closeForm = () => {
     setShowForm(false);
     setFormError("");
+  };
+
+  const openEdit = (user) => {
+    setEditingCollege(user);
+    setEditCollegeName(user.collegeName || "");
+    setEditCollegeShort(user.collegeShort || "");
+    setEditContactNumber(user.contactNumber || "");
+    setEditAddress(user.address || "");
+    setEditError("");
+  };
+
+  const closeEdit = () => {
+    setEditingCollege(null);
+    setEditError("");
+  };
+
+  const handleUpdateCollege = async (e) => {
+    e.preventDefault();
+    if (!editingCollege?.id) return;
+    setEditError("");
+    setEditLoading(true);
+    try {
+      await updateDoc(doc(db, "users", editingCollege.id), {
+        collegeName: (editCollegeName || "").trim() || null,
+        collegeShort: (editCollegeShort || "").trim() || null,
+        contactNumber: (editContactNumber || "").trim() || null,
+        address: (editAddress || "").trim() || null,
+        updatedAt: serverTimestamp(),
+      });
+      setCollegeAdmins((prev) =>
+        prev.map((c) =>
+          c.id === editingCollege.id
+            ? {
+                ...c,
+                collegeName: (editCollegeName || "").trim() || null,
+                collegeShort: (editCollegeShort || "").trim() || null,
+                contactNumber: (editContactNumber || "").trim() || null,
+                address: (editAddress || "").trim() || null,
+              }
+            : c
+        )
+      );
+      closeEdit();
+    } catch (err) {
+      console.error(err);
+      setEditError(err.message || "Failed to update college.");
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   const handleCreateCollegeAdmin = async (e) => {
@@ -235,15 +294,24 @@ export default function SuperAdminDashboardPage() {
                     <td className="p-3 max-w-xs truncate" title={user.address}>
                       {user.address || "—"}
                     </td>
-                    <td className="p-3">
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteCollege(e, user)}
-                        disabled={deletingId === user.id}
-                        className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {deletingId === user.id ? "Deleting..." : "Delete"}
-                      </button>
+                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(user)}
+                          className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteCollege(e, user)}
+                          disabled={deletingId === user.id}
+                          className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {deletingId === user.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -373,6 +441,112 @@ export default function SuperAdminDashboardPage() {
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   {formLoading ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit College Admin modal */}
+      {editingCollege && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-xl font-bold">Edit College</h2>
+              <button
+                type="button"
+                onClick={closeEdit}
+                className="p-1 rounded hover:bg-gray-100"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateCollege} className="p-4 space-y-4">
+              {editError && (
+                <p className="text-red-600 text-sm">{editError}</p>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  College Name *
+                </label>
+                <input
+                  type="text"
+                  value={editCollegeName}
+                  onChange={(e) => setEditCollegeName(e.target.value)}
+                  placeholder="e.g. ABC College of Engineering"
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  College short code
+                </label>
+                <input
+                  type="text"
+                  value={editCollegeShort}
+                  onChange={(e) => setEditCollegeShort(e.target.value.toUpperCase())}
+                  placeholder="e.g. SCRRC"
+                  className="w-full px-3 py-2 border rounded-lg font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email (read-only)
+                </label>
+                <input
+                  type="email"
+                  value={editingCollege.email || ""}
+                  readOnly
+                  className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-gray-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contact Number
+                </label>
+                <input
+                  type="tel"
+                  value={editContactNumber}
+                  onChange={(e) => setEditContactNumber(e.target.value)}
+                  placeholder="e.g. +91 9876543210"
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Address / Location
+                </label>
+                <textarea
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                  placeholder="College address or location"
+                  rows={3}
+                  className="w-full px-3 py-2 border rounded-lg resize-none"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {editLoading ? "Saving..." : "Save"}
                 </button>
               </div>
             </form>

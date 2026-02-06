@@ -47,17 +47,17 @@ export default function StudentTable({ students, loading, onRefresh, collegeCode
       <table className="w-full">
         <thead className="bg-gray-200">
           <tr>
-            <th className="p-3">Roll</th>
-            <th className="p-3">Name</th>
-            <th className="p-3">College</th>
-            <th className="p-3">Email</th>
-            <th className="p-3">Course</th>
-            <th className="p-3">Password</th>
-            <th className="p-3">Action</th>
+            <th className="p-3 text-black">Roll</th>
+            <th className="p-3 text-black">Name</th>
+            <th className="p-3 text-black">College</th>
+            <th className="p-3 text-black">Email</th>
+            <th className="p-3 text-black">Course</th>
+            <th className="p-3 text-black">Password</th>
+            <th className="p-3 text-black">Action</th>
           </tr>
         </thead>
 
-        <tbody>
+        <tbody className="text-black">
           {loading ? (
             <tr>
               <td colSpan="7" className="p-6 text-center">
@@ -76,7 +76,7 @@ export default function StudentTable({ students, loading, onRefresh, collegeCode
               const isResetting = resettingId === uid;
               const showDefaultPassword = s.defaultPassword === true;
               return (
-                <tr key={s.id} className="border-b">
+                <tr key={s.id} className="border-b border-gray-200">
                   <td className="p-3">{s.rollNumber}</td>
                   <td className="p-3">{s.name}</td>
                   <td className="p-3">{s.college ?? "—"}</td>

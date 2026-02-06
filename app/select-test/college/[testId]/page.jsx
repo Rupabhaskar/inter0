@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   collection,
   collectionGroup,
@@ -17,41 +18,49 @@ import { db, auth } from "@/lib/firebase";
 import { questionDb } from "@/lib/firebaseQuestionDb";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-/* ================= CLOUDINARY IMAGE COMPONENT ================= */
+/* ================= CLOUDINARY IMAGE COMPONENT (next/image optimized) ================= */
 function CloudinaryImage({ src, alt, type = "question", priority = false }) {
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
+  const width = type === "option" ? 300 : 500;
+  const height = type === "option" ? 200 : 300;
+  const optimizedSrc = useMemo(() => {
+    if (src?.includes("cloudinary.com"))
+      return src.replace("/upload/", `/upload/f_auto,q_auto,w_${width}/`);
+    return src;
+  }, [src, width]);
 
   if (!src || error) return null;
 
-  // Optimize Cloudinary URL for faster loading
-  const optimizedSrc = useMemo(() => {
-    if (src.includes("cloudinary.com")) {
-      // Different sizes for question vs option images  
-      const width = type === "option" ? 300 : 500;
-      return src.replace("/upload/", `/upload/f_auto,q_auto,w_${width}/`);
-    }
-    return src;
-  }, [src, type]);
+  const isCloudinary = src.includes("cloudinary.com");
+  const sizeClasses =
+    type === "option"
+      ? "max-w-[200px] max-h-[120px]"
+      : "max-w-[400px] max-h-[250px]";
 
-  // Size classes based on type
-  const sizeClasses = type === "option" 
-    ? "max-w-[200px] max-h-[120px]" 
-    : "max-w-[400px] max-h-[250px]";
+  if (isCloudinary) {
+    return (
+      <div className={`relative inline-block ${sizeClasses}`}>
+        <Image
+          src={optimizedSrc}
+          alt={alt}
+          width={width}
+          height={height}
+          className={`rounded border object-contain w-auto h-auto ${sizeClasses}`}
+          priority={priority}
+          unoptimized={false}
+          onError={() => setError(true)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={`relative inline-block ${sizeClasses}`}>
-      {isLoading && (
-        <div className="absolute inset-0 bg-gray-200 animate-pulse rounded min-w-[100px] min-h-[60px]" />
-      )}
       <img
-        src={optimizedSrc}
+        src={src}
         alt={alt}
-        className={`rounded border object-contain w-auto h-auto ${sizeClasses} transition-opacity duration-300 ${
-          isLoading ? "opacity-0" : "opacity-100"
-        }`}
+        className={`rounded border object-contain w-auto h-auto ${sizeClasses}`}
         loading={priority ? "eager" : "lazy"}
-        onLoad={() => setIsLoading(false)}
         onError={() => setError(true)}
       />
     </div>

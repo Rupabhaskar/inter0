@@ -126,7 +126,7 @@ export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid, def
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white w-full max-w-md rounded-xl shadow-xl p-6">
+      <div className="bg-white w-full max-w-md rounded-xl shadow-xl p-6 text-black">
         <h2 className="text-xl font-semibold mb-4">Create Admission</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -137,7 +137,7 @@ export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid, def
             placeholder="Roll Number"
             required
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg"
+            className="w-full p-3 border rounded-lg border-gray-300 bg-white text-black"
           />
 
           <input
@@ -145,7 +145,7 @@ export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid, def
             placeholder="Name"
             required
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg"
+            className="w-full p-3 border rounded-lg border-gray-300 bg-white text-black"
           />
 
           <input
@@ -154,7 +154,7 @@ export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid, def
             placeholder="Email"
             required
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg"
+            className="w-full p-3 border rounded-lg border-gray-300 bg-white text-black"
           />
 
           <input
@@ -162,7 +162,7 @@ export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid, def
             placeholder="Phone"
             required
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg"
+            className="w-full p-3 border rounded-lg border-gray-300 bg-white text-black"
           />
 
           <input
@@ -170,7 +170,7 @@ export default function AdmissionForm({ onClose, onSuccess, collegeAdminUid, def
             placeholder="Course"
             required
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg"
+            className="w-full p-3 border rounded-lg border-gray-300 bg-white text-black"
           />
 
           <div className="flex justify-end gap-3">

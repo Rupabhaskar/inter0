@@ -1,17 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { Eye, EyeOff } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) router.replace("/dashboard");
+  }, [user, authLoading, router]);
 
   const loginEmail = async () => {
     setLoading(true);
@@ -27,8 +34,16 @@ export default function LoginPage() {
     }
   };
 
+  if (authLoading || user) {
+    return (
+      <div className="min-h-screen mt-[-25px] flex items-center justify-center bg-gray-950 text-white">
+        <p className="text-gray-400">Loading...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950 text-white">
+    <div className="min-h-screen mt-[-25px] flex items-center justify-center bg-gray-950 text-white">
       <div className="bg-gray-900 p-8 rounded-xl w-full max-w-sm space-y-4">
         <h2 className="text-2xl font-bold text-center">Student Login</h2>
 

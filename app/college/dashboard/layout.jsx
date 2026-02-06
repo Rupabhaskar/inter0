@@ -60,6 +60,7 @@ export default function DashboardLayout({ children }) {
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
 
+  // Never render dashboard until login is verified; redirect to /college if not logged in
   useEffect(() => {
     return onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -123,8 +124,8 @@ export default function DashboardLayout({ children }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-600">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen bg-white">
+        <div className="text-gray-600">Checking login...</div>
       </div>
     );
   }
@@ -157,7 +158,7 @@ export default function DashboardLayout({ children }) {
   });
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
+    <div className="flex min-h-screen bg-white">
       {/* Sidebar */}
       <aside className="w-64 bg-gray-900 text-gray-200 p-4">
         <div className="mb-6">

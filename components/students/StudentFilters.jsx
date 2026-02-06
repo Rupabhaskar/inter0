@@ -9,13 +9,13 @@ export default function StudentFilters({ students, filters, setFilters }) {
         placeholder="Search Roll Number"
         value={filters.roll}
         onChange={(e) => setFilters({ ...filters, roll: e.target.value })}
-        className="p-3 border rounded"
+        className="p-3 border rounded bg-white border-gray-300 text-black"
       />
 
       <select
         value={filters.course}
         onChange={(e) => setFilters({ ...filters, course: e.target.value })}
-        className="p-3 border rounded"
+        className="p-3 border rounded bg-white border-gray-300 text-black"
       >
         <option value="">All Courses</option>
         {courses.map((c) => (
@@ -28,7 +28,7 @@ export default function StudentFilters({ students, filters, setFilters }) {
       <select
         value={filters.sortBy}
         onChange={(e) => setFilters({ ...filters, sortBy: e.target.value })}
-        className="p-3 border rounded"
+        className="p-3 border rounded bg-white border-gray-300 text-black"
       >
         <option value="">Sort By</option>
         <option value="name">Name</option>
@@ -40,7 +40,7 @@ export default function StudentFilters({ students, filters, setFilters }) {
         onChange={(e) =>
           setFilters({ ...filters, sortOrder: e.target.value })
         }
-        className="p-3 border rounded"
+        className="p-3 border rounded bg-white border-gray-300 text-black"
       >
         <option value="asc">Ascending</option>
         <option value="desc">Descending</option>

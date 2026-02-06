@@ -5,7 +5,8 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { collection, collectionGroup, doc, getDoc, getDocs, query, where, limit } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 
 // 🔥 ICONS
@@ -20,19 +21,134 @@ import {
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
 
   const [mounted, setMounted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [collegeName, setCollegeName] = useState(null);
 
   useEffect(() => {
-    // defer mounted flag to avoid synchronous setState inside effect
     const t = setTimeout(() => setMounted(true), 0);
     return () => clearTimeout(t);
   }, []);
 
+  /* Resolve college name for logged-in users (students + college admin/user) – show beside logo on all pages */
+  useEffect(() => {
+    if (!user?.uid) {
+      setCollegeName(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        // College admin: name from own user doc
+        if (role === "collegeAdmin") {
+          const snap = await getDoc(doc(db, "users", user.uid));
+          if (cancelled) return;
+          const data = snap.exists() ? snap.data() : {};
+          const name = data.collegeName || data.name || data.email || data.collegeShort || null;
+          setCollegeName(name);
+          return;
+        }
+        // College user: name from linked admin's user doc
+        if (role === "collegeuser") {
+          const snap = await getDoc(doc(db, "users", user.uid));
+          if (cancelled) return;
+          const data = snap.exists() ? snap.data() : {};
+          const adminUid = data.collegeAdminUid;
+          if (!adminUid) {
+            setCollegeName(null);
+            return;
+          }
+          const adminSnap = await getDoc(doc(db, "users", adminUid));
+          if (cancelled) return;
+          const adminData = adminSnap.exists() ? adminSnap.data() : {};
+          const name = adminData.collegeName || adminData.name || adminData.email || adminData.collegeShort || null;
+          setCollegeName(name);
+          return;
+        }
+        // Student: resolve college code then fetch admin doc for name
+        let collegeCode = null;
+        try {
+          const q = query(
+            collectionGroup(db, "ids"),
+            where("uid", "==", user.uid),
+            limit(1)
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const docRef = snap.docs[0].ref;
+            collegeCode = docRef.parent.parent.id;
+            const data = snap.docs[0].data();
+            if (data.college != null && String(data.college).trim() !== "")
+              collegeCode = String(data.college).trim();
+          }
+        } catch (_) {
+          const collegesSnap = await getDocs(
+            query(collection(db, "users"), where("role", "==", "collegeAdmin"))
+          );
+          const codes = new Set(["_"]);
+          collegesSnap.docs.forEach((d) => {
+            const c = d.data().collegeShort;
+            if (c) codes.add(String(c).trim());
+          });
+          for (const code of codes) {
+            const studentSnap = await getDoc(doc(db, "students", code, "ids", user.uid));
+            if (studentSnap.exists()) {
+              collegeCode = studentSnap.data().college != null ? String(studentSnap.data().college).trim() : code;
+              if (!collegeCode) collegeCode = code;
+              break;
+            }
+          }
+        }
+        if (cancelled || !collegeCode) {
+          setCollegeName(null);
+          return;
+        }
+        const adminSnap = await getDocs(
+          query(
+            collection(db, "users"),
+            where("role", "==", "collegeAdmin"),
+            where("collegeShort", "==", collegeCode),
+            limit(1)
+          )
+        );
+        if (cancelled) return;
+        const name =
+          adminSnap.empty
+            ? collegeCode
+            : (adminSnap.docs[0].data().collegeName || adminSnap.docs[0].data().name || adminSnap.docs[0].data().email || collegeCode);
+        setCollegeName(name);
+      } catch (_) {
+        if (!cancelled) setCollegeName(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.uid, role]);
+
   const hideNavbar =
     pathname === "/" || pathname.startsWith("/test");
+  const loginOnlyLogo = pathname === "/login" || pathname === "/college";
+
+  // Login page: show only Ranksprint logo (zoomed), no menu
+  if (mounted && loginOnlyLogo) {
+    return (
+      <nav className="bg-white border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-center">
+          <Link href="/" className="flex items-center shrink-0">
+            <Image
+              src="/Ranksprint.png"
+              alt="RankSprint logo – Inter JEE mock test and EAMCET mock test platform"
+              width={320}
+              height={96}
+              className="h-20 md:h-28 w-auto object-contain scale-110 md:scale-155"
+              priority
+            />
+          </Link>
+        </div>
+      </nav>
+    );
+  }
 
   if (!mounted || hideNavbar) return null;
 
@@ -51,17 +167,24 @@ export default function Navbar() {
   return (
     <nav className="bg-white border-b border-slate-200 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 h-16 md:h-20 flex items-center justify-between gap-4 min-h-0">
-        {/* LOGO - contained inside navbar, no overflow */}
-        <Link href="/" className="flex items-center shrink-0 max-h-full py-1">
-          <Image
-            src="/Ranksprint.png"
-            alt="RankSprint logo – Inter JEE mock test and EAMCET mock test platform"
-            width={320}
-            height={96}
-            className="h-14 md:h-[10rem] w-auto max-h-full object-contain object-left"
-            priority
-          />
-        </Link>
+        {/* LOGO + College name (for students) */}
+        <div className="flex items-center gap-3 shrink-0 min-w-0">
+          <Link href="/" className="flex items-center shrink-0 max-h-full py-1">
+            <Image
+              src="/Ranksprint.png"
+              alt="RankSprint logo – Inter JEE mock test and EAMCET mock test platform"
+              width={320}
+              height={96}
+              className="h-14 md:h-[10rem] w-auto max-h-full object-contain object-left"
+              priority
+            />
+          </Link>
+          {collegeName && (
+            <span className="hidden sm:inline text-slate-600 text-sm md:text-base font-medium border-l border-slate-300 pl-3 truncate max-w-[180px] md:max-w-[220px]" title={collegeName}>
+              {collegeName}
+            </span>
+          )}
+        </div>
 
         {/* DESKTOP MENU - zoomed / larger */}
         <div className="hidden md:flex items-center gap-1 shrink-0">
@@ -103,6 +226,11 @@ export default function Navbar() {
       {/* MOBILE MENU */}
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-slate-200">
+          {collegeName && (
+            <div className="px-4 py-3 text-slate-600 text-sm font-medium border-b border-slate-100">
+              Collaborating with {collegeName}
+            </div>
+          )}
           <Link
             href="/dashboard"
             className="flex items-center gap-2 px-4 py-3"

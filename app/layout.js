@@ -22,8 +22,15 @@ export default function RootLayout({ children }) {
   const organizationSchema = getOrganizationSchema();
   const websiteSchema = getWebSiteSchema();
   return (
-    <html lang="en">
-      <body className="bg-slate-100 text-slate-900">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var d=document.documentElement.classList;var s=localStorage.getItem('theme');var m=window.matchMedia('(prefers-color-scheme: dark)');var dark=s==='dark'||(s!=='light'&&m.matches);d.toggle('dark',dark);})();`,
+          }}
+        />
+      </head>
+      <body className="bg-white text-black">
         <JsonLd data={organizationSchema} />
         <JsonLd data={websiteSchema} />
         <AuthProvider>

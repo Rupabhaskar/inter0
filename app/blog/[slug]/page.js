@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPostBySlug, getAllSlugs } from "@/data/blog-posts";
-import { siteUrl } from "@/lib/seo";
+import { siteUrl, slugToKeywords } from "@/lib/seo";
+
+export const revalidate = 86400; // ISR: revalidate blog posts every 24 hours
 
 export async function generateStaticParams() {
   const slugs = getAllSlugs();
@@ -13,9 +15,18 @@ export async function generateMetadata({ params }) {
   const post = getPostBySlug(slug);
   if (!post) return { title: "Post not found" };
   const url = `${siteUrl}/blog/${post.slug}`;
+  const keywordsFromSlug = slugToKeywords(post.slug);
+  const keywords = [
+    post.title,
+    ...(keywordsFromSlug ? [keywordsFromSlug] : []),
+    "RankSprint",
+    "JEE mock test",
+    "EAMCET mock test",
+  ].filter(Boolean);
   return {
     title: post.title,
     description: post.excerpt,
+    keywords: keywords.slice(0, 10),
     openGraph: {
       title: post.title,
       description: post.excerpt,
@@ -29,22 +40,27 @@ export async function generateMetadata({ params }) {
       description: post.excerpt,
     },
     alternates: { canonical: url },
+    robots: { index: true, follow: true },
   };
 }
 
-function ArticleJsonLd({ post }) {
+function BlogPostingJsonLd({ post }) {
+  const url = `${siteUrl}/blog/${post.slug}`;
+  const keywordsFromSlug = slugToKeywords(post.slug);
   const schema = {
     "@context": "https://schema.org",
-    "@type": "Article",
+    "@type": "BlogPosting",
     headline: post.title,
     description: post.excerpt,
     datePublished: post.date,
-    url: `${siteUrl}/blog/${post.slug}`,
+    url,
+    mainEntityOfPage: { "@type": "WebPage", "@id": url },
     publisher: {
       "@type": "Organization",
       name: "RankSprint",
       logo: { "@type": "ImageObject", url: `${siteUrl}/Ranksprint.png` },
     },
+    ...(keywordsFromSlug ? { keywords: keywordsFromSlug } : {}),
   };
   return (
     <script
@@ -60,7 +76,7 @@ export default async function BlogPostPage({ params }) {
   if (!post) notFound();
   return (
     <>
-      <ArticleJsonLd post={post} />
+      <BlogPostingJsonLd post={post} />
       <div className="max-w-3xl mx-auto px-4 py-10">
         <Link
           href="/blog"

@@ -78,7 +78,7 @@ export default function StudentUpload({ onSuccess, collegeAdminUid, collegeCode,
       />
 
       {result && (
-        <div className="mt-4 bg-white p-4 rounded-xl shadow">
+        <div className="mt-4 bg-white p-4 rounded-xl shadow text-black">
           <p className="text-green-600">
             Created: {result.created.length}
           </p>

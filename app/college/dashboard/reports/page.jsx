@@ -382,6 +382,35 @@ function ReportsContent() {
         })()
       : null;
 
+  /* College-wise rank per exam type: rank among all college students in that exam type */
+  const studentCollegeRankByExamType =
+    allResults.length > 0 && student
+      ? (() => {
+          const uid = student.uid || student.id;
+          const examTypes = [...new Set(allResults.map((r) => String(r.testType || "Other").trim() || "Other"))];
+          const rankByType = {};
+          examTypes.forEach((testType) => {
+            const typeResults = allResults.filter(
+              (r) => (String(r.testType || "Other").trim() || "Other") === testType
+            );
+            const byUid = {};
+            typeResults.forEach((r) => {
+              if (!r.uid) return;
+              if (!byUid[r.uid]) byUid[r.uid] = [];
+              byUid[r.uid].push(r.total ? (r.score ?? 0) / r.total : 0);
+            });
+            const allAvgs = Object.entries(byUid).map(([u, arr]) => ({
+              uid: u,
+              avg: arr.reduce((x, y) => x + y, 0) / arr.length,
+            }));
+            allAvgs.sort((a, b) => b.avg - a.avg);
+            const idx = allAvgs.findIndex((a) => a.uid === uid);
+            rankByType[testType] = idx >= 0 ? idx + 1 : null;
+          });
+          return rankByType;
+        })()
+      : {};
+
   const onDownloadStudentReport = () => {
     if (!student || studentResults.length === 0) return;
     if (studentByExamType.length === 0) {
@@ -390,18 +419,23 @@ function ReportsContent() {
         { Metric: "Class", Value: studentClass || "-" },
         { Metric: "Rank in class", Value: studentRankInClass != null ? studentRankInClass : "-" },
         { Metric: "Total attempts", Value: studentResults.length },
+        ...Object.entries(studentCollegeRankByExamType).map(([testType, rank]) => ({
+          Metric: `College rank: ${testType}`,
+          Value: rank != null ? rank : "-",
+        })),
         ...Object.entries(studentSubjectAvgs).map(([subj, avg]) => ({ Metric: `Subject: ${subj} (%)`, Value: avg })),
       ];
       downloadCSV(`student-report-${(student.rollNumber || student.id || "student").toString().replace(/\s/g, "-")}.csv`, rows, ["Metric", "Value"]);
       return;
     }
     const subjectKeys = [...new Set(studentByExamType.flatMap((r) => Object.keys(r.subjectAvgs || {})))];
-    const headers = ["Exam type", "Attempts", "Exam avg (%)", ...subjectKeys.map((s) => `${s} (%)`)];
+    const headers = ["Exam type", "Attempts", "Exam avg (%)", "College rank", ...subjectKeys.map((s) => `${s} (%)`)];
     const rows = studentByExamType.map((r) => {
       const row = {
         "Exam type": r.testType,
         Attempts: r.totalAttempts,
         "Exam avg (%)": r.examAvg,
+        "College rank": studentCollegeRankByExamType[r.testType] != null ? studentCollegeRankByExamType[r.testType] : "",
       };
       subjectKeys.forEach((s) => {
         row[`${s} (%)`] = (r.subjectAvgs || {})[s] ?? "";
@@ -435,8 +469,8 @@ function ReportsContent() {
   };
 
   return (
-    <div className="p-6 min-h-screen bg-gray-50">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">
+    <div className="p-6 min-h-screen bg-white">
+      <h1 className="text-2xl font-bold text-black mb-6">
         Download & Export Reports
       </h1>
       {collegeCode == null && (
@@ -447,12 +481,12 @@ function ReportsContent() {
       )}
 
       {/* Student Analytics */}
-      <section className="bg-white rounded-xl border shadow-sm p-6 mb-8">
+      <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
         <div className="flex items-center gap-2 mb-4">
           <User className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-semibold text-gray-800">Student Analytics</h2>
+          <h2 className="text-lg font-semibold text-black">Student Analytics</h2>
         </div>
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-600 mb-4">
           Enter Student ID to view exam average, subject average, and class-wise performance.
         </p>
         <div className="flex flex-wrap gap-2 mb-4">
@@ -462,7 +496,7 @@ function ReportsContent() {
             onChange={(e) => setStudentIdInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && searchStudent()}
             placeholder="Roll No or Student ID"
-            className="border rounded-lg px-4 py-2 w-64 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="border border-gray-300 rounded-lg px-4 py-2 w-64 bg-white text-black focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
           <button
             onClick={searchStudent}
@@ -477,36 +511,36 @@ function ReportsContent() {
           <p className="text-red-600 text-sm mb-4">{studentError}</p>
         )}
         {student && (
-          <div className="border rounded-lg p-4 bg-gray-50 mb-4">
-            <h3 className="font-semibold text-gray-800 mb-3">
+          <div className="border border-gray-200 rounded-lg p-4 bg-white mb-4">
+            <h3 className="font-semibold text-black mb-3">
               {student.name || student.email || "Student"} {student.rollNumber && `(${student.rollNumber})`}
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-              <div className="bg-white p-3 rounded-lg border">
-                <div className="text-xs text-gray-500 uppercase">Exam average</div>
+              <div className="bg-white p-3 rounded-lg border border-gray-200 text-black">
+                <div className="text-xs text-gray-600 uppercase">Exam average</div>
                 <div className="text-xl font-bold text-blue-600">{studentExamAvg}%</div>
               </div>
-              <div className="bg-white p-3 rounded-lg border">
-                <div className="text-xs text-gray-500 uppercase">Class</div>
+              <div className="bg-white p-3 rounded-lg border border-gray-200 text-black">
+                <div className="text-xs text-gray-600 uppercase">Class</div>
                 <div className="text-lg font-semibold">{studentClass || "-"}</div>
               </div>
-              <div className="bg-white p-3 rounded-lg border">
-                <div className="text-xs text-gray-500 uppercase">Rank in class</div>
+              <div className="bg-white p-3 rounded-lg border border-gray-200 text-black">
+                <div className="text-xs text-gray-600 uppercase">Rank in class</div>
                 <div className="text-lg font-semibold">{studentRankInClass != null ? `#${studentRankInClass}` : "-"}</div>
               </div>
-              <div className="bg-white p-3 rounded-lg border">
-                <div className="text-xs text-gray-500 uppercase">Total attempts</div>
+              <div className="bg-white p-3 rounded-lg border border-gray-200 text-black">
+                <div className="text-xs text-gray-600 uppercase">Total attempts</div>
                 <div className="text-lg font-semibold">{studentResults.length}</div>
               </div>
             </div>
             {Object.keys(studentSubjectAvgs).length > 0 && (
               <div className="mb-4">
-                <div className="text-sm font-medium text-gray-700 mb-2">Subject average (%)</div>
+                <div className="text-sm font-medium text-black mb-2">Subject average (%)</div>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(studentSubjectAvgs).map(([subj, avg]) => (
                     <span
                       key={subj}
-                      className="bg-white border rounded px-3 py-1 text-sm"
+                      className="bg-white border border-gray-200 rounded px-3 py-1 text-sm text-black"
                     >
                       {subj}: <strong>{avg}%</strong>
                     </span>
@@ -514,16 +548,32 @@ function ReportsContent() {
                 </div>
               </div>
             )}
+            {Object.keys(studentCollegeRankByExamType).length > 0 && (
+              <div className="mb-4">
+                <div className="text-sm font-medium text-black mb-2">College rank by exam type</div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(studentCollegeRankByExamType).map(([testType, rank]) => (
+                    <span
+                      key={testType}
+                      className="bg-blue-50 border border-blue-200 rounded px-3 py-1 text-sm text-black"
+                    >
+                      {testType}: <strong>{rank != null ? `#${rank}` : "-"}</strong>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {studentByExamType.length > 0 && (
               <div className="mb-4">
-                <div className="text-sm font-medium text-gray-700 mb-2">Exam type comparison</div>
-                <div className="overflow-x-auto border rounded-lg">
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-gray-100 text-gray-700">
+                <div className="text-sm font-medium text-black mb-2">Exam type comparison</div>
+                <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                  <table className="w-full text-sm text-left text-black">
+                    <thead className="bg-gray-100 text-black">
                       <tr>
                         <th className="p-3">Exam type</th>
                         <th className="p-3">Attempts</th>
                         <th className="p-3">Exam avg (%)</th>
+                        <th className="p-3">College rank</th>
                         {[...new Set(studentByExamType.flatMap((r) => Object.keys(r.subjectAvgs || {})))].map((s) => (
                           <th key={s} className="p-3">{s} (%)</th>
                         ))}
@@ -531,10 +581,15 @@ function ReportsContent() {
                     </thead>
                     <tbody>
                       {studentByExamType.map((row) => (
-                        <tr key={row.testType} className="border-t">
+                        <tr key={row.testType} className="border-t border-gray-200">
                           <td className="p-3 font-medium">{row.testType}</td>
                           <td className="p-3">{row.totalAttempts}</td>
                           <td className="p-3 font-semibold">{row.examAvg}</td>
+                          <td className="p-3 font-medium">
+                            {studentCollegeRankByExamType[row.testType] != null
+                              ? `#${studentCollegeRankByExamType[row.testType]}`
+                              : "-"}
+                          </td>
                           {[...new Set(studentByExamType.flatMap((r) => Object.keys(r.subjectAvgs || {})))].map((s) => (
                             <td key={s} className="p-3">{(row.subjectAvgs || {})[s] ?? "-"}</td>
                           ))}
@@ -557,12 +612,12 @@ function ReportsContent() {
       </section>
 
       {/* Class-based comparison (from Manage > Classes) – exam-wise */}
-      <section className="bg-white rounded-xl border shadow-sm p-6">
+      <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
         <div className="flex items-center gap-2 mb-4">
           <Users className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-semibold text-gray-800">Class-based performance</h2>
+          <h2 className="text-lg font-semibold text-black">Class-based performance</h2>
         </div>
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-600 mb-4">
           Classes from <strong>Manage → Classes</strong>, broken down by <strong>exam type</strong>. Only students added to each class are included. Total students, attempts, exam average, and subject-wise average per class and exam type.
         </p>
         <button
@@ -574,9 +629,9 @@ function ReportsContent() {
         </button>
         {classWiseData.length > 0 && (
           <>
-            <div className="overflow-x-auto border rounded-lg">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-gray-100 text-gray-700">
+            <div className="overflow-x-auto border border-gray-200 rounded-lg">
+              <table className="w-full text-sm text-left text-black">
+                <thead className="bg-gray-100 text-black">
                   <tr>
                     <th className="p-3">Class</th>
                     <th className="p-3">Exam type</th>
@@ -590,7 +645,7 @@ function ReportsContent() {
                 </thead>
                 <tbody>
                   {classWiseData.map((row, idx) => (
-                    <tr key={`${row.class}-${row.testType}-${idx}`} className="border-t">
+                    <tr key={`${row.class}-${row.testType}-${idx}`} className="border-t border-gray-200">
                       <td className="p-3 font-medium">{row.class}</td>
                       <td className="p-3 font-medium">{row.testType}</td>
                       <td className="p-3">{row.totalStudents}</td>

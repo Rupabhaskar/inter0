@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import * as XLSX from "xlsx";
 import imageCompression from "browser-image-compression";
 import {
@@ -12,6 +13,24 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+/** Use next/image for http(s) URLs (Cloudinary), <img> for blob previews */
+function OptimizedImage({ src, alt, className, width = 400, height = 300 }) {
+  if (!src) return null;
+  if (src.startsWith("blob:")) {
+    return <img src={src} alt={alt} className={className} />;
+  }
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={width}
+      height={height}
+      className={className}
+      unoptimized={!src.includes("cloudinary.com")}
+    />
+  );
+}
 
 /* ================= MAIN PAGE ================= */
 
@@ -903,10 +922,12 @@ function QuestionSection({
               </label>
               {qData.imageUrl ? (
                 <div className="relative inline-block">
-                  <img
+                  <OptimizedImage
                     src={qData.imageUrl}
                     alt="Question"
-                    className="max-w-xs max-h-48 rounded border"
+                    className="max-w-xs max-h-48 rounded border object-contain"
+                    width={320}
+                    height={192}
                   />
                   <button
                     onClick={removeQuestionImage}
@@ -958,10 +979,12 @@ function QuestionSection({
                 </label>
                 {(qData.optionImages && qData.optionImages[i]) ? (
                   <div className="relative inline-block">
-                    <img
+                    <OptimizedImage
                       src={qData.optionImages[i]}
                       alt={`Option ${i + 1}`}
-                      className="max-w-xs max-h-32 rounded border"
+                      className="max-w-xs max-h-32 rounded border object-contain"
+                      width={320}
+                      height={128}
                     />
                     <button
                       onClick={() => removeOptionImage(i)}
@@ -1015,10 +1038,12 @@ function QuestionSection({
             <div className="flex-1">
               <p className="font-semibold">{q.text}</p>
               {q.imageUrl && (
-                <img
+                <OptimizedImage
                   src={q.imageUrl}
                   alt="Question"
-                  className="max-w-md max-h-48 rounded border mt-2"
+                  className="max-w-md max-h-48 rounded border mt-2 object-contain"
+                  width={448}
+                  height={192}
                 />
               )}
               <div className="mt-2 space-y-1">
@@ -1036,10 +1061,12 @@ function QuestionSection({
                   imgUrl && (
                     <div key={idx} className="ml-4">
                       <span className="text-xs text-gray-500">Option {String.fromCharCode(65 + idx)}:</span>
-                      <img
+                      <OptimizedImage
                         src={imgUrl}
                         alt={`Option ${String.fromCharCode(65 + idx)}`}
-                        className="max-w-xs max-h-24 rounded border mt-1"
+                        className="max-w-xs max-h-24 rounded border mt-1 object-contain"
+                        width={320}
+                        height={96}
                       />
                     </div>
                   )

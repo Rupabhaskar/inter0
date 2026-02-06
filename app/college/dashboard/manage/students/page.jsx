@@ -144,10 +144,10 @@ function StudentsPageContent() {
   const atStudentLimit = maxStudents != null && allStudents.length >= maxStudents;
 
   return (
-    <div className="p-6 min-h-screen bg-gray-100">
+    <div className="p-6 min-h-screen bg-white">
       <div className="flex justify-between items-center mb-6 flex-wrap gap-2">
         <div>
-          <h1 className="text-3xl font-bold">Students</h1>
+          <h1 className="text-3xl font-bold text-black">Students</h1>
           {maxStudents != null && (
             <p className="text-sm text-gray-500 mt-1">
               Student limit: {allStudents.length} of {maxStudents} used

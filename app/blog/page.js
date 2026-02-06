@@ -1,11 +1,23 @@
 import Link from "next/link";
 import { getAllPosts } from "@/data/blog-posts";
-import { siteUrl } from "@/lib/seo";
+import { siteUrl, getBlogListingSchema } from "@/lib/seo";
+
+export const revalidate = 86400; // ISR: revalidate blog list every 24 hours
 
 export const metadata = {
   title: "Blog",
   description:
     "JEE Main, JEE Advanced & AP EAMCET preparation tips, mock test strategies, and exam guidance.",
+  keywords: [
+    "JEE Main mock test",
+    "JEE Advanced mock test",
+    "AP EAMCET mock test",
+    "JEE preparation tips",
+    "EAMCET preparation",
+    "inter mock test",
+    "RankSprint blog",
+    "engineering entrance mock test",
+  ],
   openGraph: {
     title: "Blog | RankSprint – JEE & EAMCET Prep Tips",
     description:
@@ -13,13 +25,26 @@ export const metadata = {
     url: `${siteUrl}/blog`,
   },
   alternates: { canonical: `${siteUrl}/blog` },
+  robots: { index: true, follow: true },
 };
+
+function BlogJsonLd({ posts }) {
+  const schema = getBlogListingSchema(posts);
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+    />
+  );
+}
 
 export default function BlogPage() {
   const posts = getAllPosts();
   return (
-    <div className="max-w-3xl mx-auto px-4 py-10">
-      <h1 className="text-2xl font-bold mb-2">Blog</h1>
+    <>
+      <BlogJsonLd posts={posts} />
+      <div className="max-w-3xl mx-auto px-4 py-10">
+        <h1 className="text-2xl font-bold mb-2">Blog</h1>
       <p className="text-slate-600 mb-8">
         Preparation tips and strategies for JEE Main, JEE Advanced & AP EAMCET.
       </p>
@@ -44,5 +69,6 @@ export default function BlogPage() {
         ))}
       </ul>
     </div>
+    </>
   );
 }

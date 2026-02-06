@@ -595,6 +595,7 @@ function CreateUserPageContent() {
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Email</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Password</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">College code</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Role</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Permissions</th>
@@ -607,6 +608,9 @@ function CreateUserPageContent() {
                     <tr key={user.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm">{user.name || "—"}</td>
                       <td className="px-4 py-3 text-sm">{user.email || "—"}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-gray-600" title="Default password for new users">
+                        {DEFAULT_PASSWORD}
+                      </td>
                       <td className="px-4 py-3 text-sm font-mono text-gray-700">{user.collegeCode || "—"}</td>
                       <td className="px-4 py-3 text-sm">
                         <span
