@@ -1,4 +1,5 @@
 import "./globals.css";
+import { Orbitron } from "next/font/google";
 import Navbar from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import {
@@ -8,6 +9,12 @@ import {
 } from "@/lib/seo";
 
 export const metadata = defaultMetadata;
+
+const orbitron = Orbitron({
+  subsets: ["latin"],
+  variable: "--font-ai",
+  display: "swap",
+});
 
 function JsonLd({ data }) {
   return (
@@ -30,7 +37,7 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      <body className="bg-white text-black">
+      <body className={`bg-white text-black ${orbitron.variable}`}>
         <JsonLd data={organizationSchema} />
         <JsonLd data={websiteSchema} />
         <AuthProvider>

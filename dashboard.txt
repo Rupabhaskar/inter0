@@ -1,0 +1,178 @@
+"use client";
+
+import PermissionRoute from "@/components/PermissionRoute";
+
+function DashboardPageContent() {
+  const stats = [
+    { title: "Total Students", value: 1240 },
+    { title: "Total Mock Tests", value: 48 },
+    { title: "Total Attempts", value: 18_560 },
+    { title: "Average Score", value: "62%" },
+    { title: "Topper Score", value: "98%" },
+    { title: "Accuracy %", value: "71%" },
+    { title: "Active Tests", value: 12 },
+    { title: "Pass Percentage", value: "64%" },
+  ];
+
+  const toppers = [
+    { name: "Aarav Sharma", score: 98, exam: "JEE Advanced" },
+    { name: "Ritika Verma", score: 97, exam: "JEE Mains" },
+    { name: "Kunal Singh", score: 96, exam: "JEE Advanced" },
+    { name: "Sneha Patel", score: 95, exam: "JEE Mains" },
+    { name: "Aditya Rao", score: 94, exam: "JEE Mains" },
+  ];
+
+  const subjectPerformance = [
+    { subject: "Physics", avg: 66 },
+    { subject: "Chemistry", avg: 61 },
+    { subject: "Mathematics", avg: 58 },
+  ];
+
+  return (
+    <div className="space-y-8">
+      {/* HEADER */}
+      <div>
+        <h1 className="text-3xl font-bold">
+          College Dashboard
+        </h1>
+        <p className="text-gray-600">
+          JEE Mains • JEE Advanced • Institute Mock Analytics
+        </p>
+      </div>
+
+      {/* KPI CARDS */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {stats.map((s) => (
+          <div
+            key={s.title}
+            className="bg-white p-5 rounded-xl shadow hover:shadow-md transition"
+          >
+            <p className="text-sm text-gray-500">
+              {s.title}
+            </p>
+            <p className="text-2xl font-bold mt-1">
+              {s.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* PERFORMANCE OVERVIEW */}
+      <div className="grid md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow">
+          <h2 className="font-bold text-lg mb-4">
+            Exam Performance
+          </h2>
+          <ul className="space-y-3">
+            <li className="flex justify-between">
+              <span>JEE Mains Avg</span>
+              <span className="font-semibold">64%</span>
+            </li>
+            <li className="flex justify-between">
+              <span>JEE Advanced Avg</span>
+              <span className="font-semibold">59%</span>
+            </li>
+            <li className="flex justify-between">
+              <span>Institute Mocks Avg</span>
+              <span className="font-semibold">62%</span>
+            </li>
+          </ul>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow">
+          <h2 className="font-bold text-lg mb-4">
+            Best Performing Subject
+          </h2>
+          <p className="text-4xl font-bold text-green-600">
+            Physics
+          </p>
+          <p className="text-gray-500 mt-2">
+            Avg Score: 66%
+          </p>
+        </div>
+
+        <div className="bg-white p-6 rounded-xl shadow">
+          <h2 className="font-bold text-lg mb-4">
+            Weakest Area
+          </h2>
+          <p className="text-4xl font-bold text-red-500">
+            Mathematics
+          </p>
+          <p className="text-gray-500 mt-2">
+            Needs improvement
+          </p>
+        </div>
+      </div>
+
+      {/* TOPPERS */}
+      <div className="bg-white p-6 rounded-xl shadow">
+        <h2 className="font-bold text-lg mb-4">
+          Top Performers
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="text-left text-gray-500">
+                <th className="p-2">Rank</th>
+                <th className="p-2">Student</th>
+                <th className="p-2">Exam</th>
+                <th className="p-2">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {toppers.map((t, i) => (
+                <tr key={t.name} className="border-t">
+                  <td className="p-2 font-bold">
+                    {i + 1}
+                  </td>
+                  <td className="p-2">
+                    {t.name}
+                  </td>
+                  <td className="p-2">
+                    {t.exam}
+                  </td>
+                  <td className="p-2 font-semibold">
+                    {t.score}%
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* SUBJECT PERFORMANCE */}
+      <div className="bg-white p-6 rounded-xl shadow">
+        <h2 className="font-bold text-lg mb-4">
+          Subject-wise Average Score
+        </h2>
+        <div className="space-y-4">
+          {subjectPerformance.map((s) => (
+            <div key={s.subject}>
+              <div className="flex justify-between mb-1">
+                <span>{s.subject}</span>
+                <span className="font-semibold">
+                  {s.avg}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded"
+                  style={{ width: `${s.avg}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <PermissionRoute requiredPermission="dashboard">
+      <DashboardPageContent />
+    </PermissionRoute>
+  );
+}
