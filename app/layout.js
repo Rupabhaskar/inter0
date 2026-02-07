@@ -1,5 +1,5 @@
 import "./globals.css";
-import { Orbitron } from "next/font/google";
+import { Orbitron, Inter } from "next/font/google";
 import Navbar from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import {
@@ -13,6 +13,12 @@ export const metadata = defaultMetadata;
 const orbitron = Orbitron({
   subsets: ["latin"],
   variable: "--font-ai",
+  display: "swap",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
   display: "swap",
 });
 
@@ -37,7 +43,7 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      <body className={`bg-white text-black ${orbitron.variable}`}>
+      <body className={`bg-white text-black ${orbitron.variable} ${inter.variable}`}>
         <JsonLd data={organizationSchema} />
         <JsonLd data={websiteSchema} />
         <AuthProvider>

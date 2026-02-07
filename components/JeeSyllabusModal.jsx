@@ -36,18 +36,16 @@ export default function SyllabusModal() {
 
   return (
     <>
-    {/* mt-[10px] md:mt-[-420px] lg:mt-[-390px] xl:mt-[-460px] 2xl:mt-[-1050px] */}
       {/* ================= HERO SECTION ================= */}
-      <section className="w-full mt-[10px] md:mt-[-420px] lg:mt-[-390px] xl:mt-[-460px] 2xl:mt-[-550px] bg-white overflow-x-hidden">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 md:px-8 py-8 md:py-12 lg:py-16 grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-center">
+      <section className="w-full bg-white overflow-x-hidden">
+        <div className="max-w-7xl 2xl:max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 grid grid-cols-1 md:grid-cols-[1.45fr_1fr] lg:grid-cols-[1.55fr_1fr] gap-6 md:gap-10 lg:gap-8 items-center">
 
           {/* LEFT : CARDS */}
-          <div className="md:ml-[-14px] grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-45 lg:gap-50 xl:gap-70 w-full">
-
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-24 lg:gap-6 w-full max-w-3xl sm:max-w-4xl md:max-w-none mx-auto md:mx-0 min-w-0">
             {/* JEE MAIN */}
-            <div className="xl:w-[250px] lg:w-[190px] md:w-[170px] h-auto md:h-[280px] rounded-3xl shadow-xl bg-gradient-to-b from-indigo-600 to-blue-500 text-white flex flex-col justify-between p-5">
-              <div>
-                <h2 className="text-2xl font-bold mb-4">JEE<br />Main</h2>
+            <div className="w-full min-w-[150px] min-h-[240px] md:min-h-[260px] rounded-2xl shadow-lg bg-gradient-to-b from-indigo-600 to-blue-500 text-white flex flex-col justify-between p-4 md:p-5 hover:shadow-xl transition-shadow duration-200">
+              <div className="min-w-0">
+                <h2 className="text-2xl font-bold mb-4 break-words">JEE<br />Main</h2>
                 <p className="text-sm opacity-90">Chapter weightage</p>
               </div>
               <button
@@ -59,9 +57,9 @@ export default function SyllabusModal() {
             </div>
 
             {/* JEE ADV */}
-            <div className="xl:w-[250px] lg:w-[190px] md:w-[170px] h-auto md:h-[280px] rounded-3xl shadow-xl bg-gradient-to-b from-purple-600 to-pink-500 text-white flex flex-col justify-between p-5">
-              <div>
-                <h2 className="text-2xl font-bold mb-4">JEE<br />Advanced</h2>
+            <div className="w-full min-w-[150px] min-h-[240px] md:min-h-[260px] rounded-2xl shadow-lg bg-gradient-to-b from-purple-600 to-pink-500 text-white flex flex-col justify-between p-4 md:p-5 hover:shadow-xl transition-shadow duration-200">
+              <div className="min-w-0">
+                <h2 className="text-2xl font-bold mb-4 break-words">JEE<br />Advanced</h2>
                 <p className="text-sm opacity-90">IIT Level Depth</p>
               </div>
               <button
@@ -73,9 +71,9 @@ export default function SyllabusModal() {
             </div>
 
             {/* EAMCET */}
-            <div className="xl:w-[250px] lg:w-[190px] md:w-[170px] h-auto md:h-[280px] rounded-3xl shadow-xl bg-gradient-to-b from-emerald-500 to-lime-500 text-white flex flex-col justify-between p-5">
-              <div>
-                <h2 className="text-2xl font-bold mb-4">AP<br />EAMCET</h2>
+            <div className="w-full min-w-[150px] min-h-[240px] md:min-h-[260px] rounded-2xl shadow-lg bg-gradient-to-b from-emerald-500 to-lime-500 text-white flex flex-col justify-between p-4 md:p-5 hover:shadow-xl transition-shadow duration-200">
+              <div className="min-w-0">
+                <h2 className="text-2xl font-bold mb-4 break-words">AP<br />EAMCET</h2>
                 <p className="text-sm opacity-90">AP Intermediate MPC</p>
               </div>
               <button
@@ -88,14 +86,14 @@ export default function SyllabusModal() {
           </div>
 
           {/* RIGHT IMAGE */}
-          <div className="flex justify-center">
+          <div className="flex justify-center items-center">
             <Image
               src="/syllabus.jpg"
               alt="JEE Main JEE Advanced AP EAMCET syllabus – RankSprint exam preparation"
               width={460}
               height={460}
               priority
-              className="w-full md:w-[400px] md:ml-23 lg:w-[480px] xl:w-[540px] object-contain"
+              className="w-full max-w-[280px] sm:max-w-[340px] md:max-w-[380px] lg:max-w-[420px] xl:max-w-[460px] object-contain"
             />
           </div>
         </div>
