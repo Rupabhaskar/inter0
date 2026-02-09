@@ -449,7 +449,6 @@ function DashboardPageContent() {
     </div>
   );
 }
-
 export default function DashboardPage() {
   return (
     <PermissionRoute requiredPermission="dashboard">
