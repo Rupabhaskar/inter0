@@ -4,8 +4,9 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
-import { collection, query, where, onSnapshot, doc, getDoc } from "firebase/firestore";
+import { collection, collectionGroup, query, where, onSnapshot, doc, getDoc, getDocs, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { questionDb } from "@/lib/firebaseQuestionDb";
 
 export default function Dashboard() {
   const { user, role } = useAuth();
@@ -18,6 +19,12 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) {
       queueMicrotask(() => setLoading(false));
+      return;
+    }
+
+    // Only fetch and display dashboard results for students
+    if (role !== "student") {
+      setLoading(false);
       return;
     }
 
@@ -54,11 +61,11 @@ export default function Dashboard() {
     // Try to load from cache first
     const hasCache = loadFromCache();
 
-    // Process and cache results
-    const processResults = async (snapshot) => {
+    // Process and cache results (collegeCode used to fetch college test names from questionDb)
+    const processResults = async (snapshot, collegeCode) => {
       const results = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
         
         // Show only results for the logged-in user (by studentId or uid)
         const resultStudentId = data.studentId || data.uid;
@@ -86,8 +93,8 @@ export default function Dashboard() {
           examType = "unknown";
         }
         
-        // Get test name/subject
-        let testName = data.test || "";
+        // Get test name/subject (testName is stored when saving college results)
+        let testName = data.testName || data.test || "";
         let subject = data.subject || "";
         
         // For college tests without subject, use testId or testType
@@ -129,7 +136,7 @@ export default function Dashboard() {
         total = Math.max(0, total || (correct + wrong + skipped));
 
         results.push({
-          id: doc.id,
+          id: docSnap.id,
           date: createdAt.toLocaleDateString(),
           timestamp: createdAt.getTime(),
           exam: data.exam || examType,
@@ -164,13 +171,13 @@ export default function Dashboard() {
         console.error("Error caching results:", err);
       }
 
-      // Fetch test names: college (tests) and JEE/EAMCET (superadminTests)
+      // Fetch test names: college (questionDb by collegeCode) and JEE/EAMCET (superadminTests / tests)
       const fetchTestNames = async () => {
         const resultsWithTestId = results.filter(r => r.testId);
         if (resultsWithTestId.length === 0) return;
         const testIdToSource = {};
         resultsWithTestId.forEach(r => {
-          if (!testIdToSource[r.testId]) testIdToSource[r.testId] = r.testSource || "tests";
+          if (!testIdToSource[r.testId]) testIdToSource[r.testId] = r.testSource || (r.examType === "college" ? "college" : "tests");
         });
         const testIds = Object.keys(testIdToSource);
 
@@ -188,19 +195,32 @@ export default function Dashboard() {
           }
         });
 
-        // Fetch missing test names from correct collection
+        // Fetch missing test names from correct source
         const missingIds = testIds.filter(id => !cachedTestNames[id]);
         if (missingIds.length > 0) {
           const testNamePromises = missingIds.map(async (testId) => {
-            const collectionName = testIdToSource[testId] === "superadminTests" ? "superadminTests" : "tests";
+            const source = testIdToSource[testId];
+            // College tests: questionDb collection = collegeCode, doc = testId
+            if (source === "college" && collegeCode) {
+              try {
+                const testDoc = await getDoc(doc(questionDb, collegeCode, testId));
+                if (testDoc.exists()) {
+                  const name = testDoc.data().name || testId;
+                  localStorage.setItem(`test_name_${testId}`, JSON.stringify({ name, timestamp: Date.now() }));
+                  return { testId, name };
+                }
+              } catch (err) {
+                console.error(`Error fetching college test ${testId}:`, err);
+              }
+              return { testId, name: testId };
+            }
+            // JEE / superadmin: main db
+            const collectionName = source === "superadminTests" ? "superadminTests" : "tests";
             try {
               const testDoc = await getDoc(doc(db, collectionName, testId));
               if (testDoc.exists()) {
                 const name = testDoc.data().name || testId;
-                localStorage.setItem(`test_name_${testId}`, JSON.stringify({
-                  name,
-                  timestamp: Date.now()
-                }));
+                localStorage.setItem(`test_name_${testId}`, JSON.stringify({ name, timestamp: Date.now() }));
                 return { testId, name };
               }
             } catch (err) {
@@ -245,78 +265,116 @@ export default function Dashboard() {
       return results;
     };
 
-    // Set up Firebase listener
-    const unsubscribe = onSnapshot(
-      collection(db, "results"),
-      async (snapshot) => {
-        const results = await processResults(snapshot);
-        
-        // Calculate stats after processing
-        if (results && results.length > 0) {
-          // Calculate stats by test type
-          const stats = {};
-          results.forEach((result) => {
-            const examType = result.examType;
-            if (!stats[examType]) {
-              stats[examType] = {
-                scores: [],
-                correct: 0,
-                total: 0,
-                count: 0,
-              };
-            }
-            stats[examType].scores.push(result.score);
-            // Use the calculated correct/total values
-            const correct = result.correct || 0;
-            const total = result.total || 0;
-            stats[examType].correct += correct;
-            stats[examType].total += total;
-            stats[examType].count += 1;
-          });
+    // Refs to hold latest docs from each source (for merging) and student's college code
+    const topLevelDocsRef = { current: [] };
+    const collegeDocsRef = { current: [] };
+    const collegeCodeRef = { current: null };
 
-          // Calculate best score and average for each test type
-          Object.keys(stats).forEach((examType) => {
-            const typeStats = stats[examType];
-            typeStats.bestScore = typeStats.scores.length > 0 
-              ? Math.max(...typeStats.scores)   
-              : 0;
-            typeStats.avgScore = typeStats.scores.length > 0
-              ? Math.round(typeStats.scores.reduce((a, b) => a + b, 0) / typeStats.scores.length)
-              : 0;
-            // Improved accuracy calculation - ensure we have valid values
-            if (typeStats.total > 0 && typeStats.correct >= 0) {
-              typeStats.accuracy = Math.round((typeStats.correct / typeStats.total) * 100);
-            } else {
-              typeStats.accuracy = 0;
-            }
-          });
-
-          setStatsByTestType(stats);
-          
-          // Update cache with stats
-          try {
-            const cached = localStorage.getItem(`dashboard_results_${user.uid}`);
-            if (cached) {
-              const cachedData = JSON.parse(cached);
-              cachedData.stats = stats;
-              cachedData.timestamp = Date.now();
-              localStorage.setItem(`dashboard_results_${user.uid}`, JSON.stringify(cachedData));
-            }
-          } catch (err) {
-            console.error("Error caching stats:", err);
+    const mergeAndProcess = async () => {
+      const mergedDocs = [...topLevelDocsRef.current, ...collegeDocsRef.current];
+      const pseudoSnapshot = {
+        forEach: (cb) => mergedDocs.forEach((d) => cb(d)),
+      };
+      const results = await processResults(pseudoSnapshot, collegeCodeRef.current);
+      if (results && results.length > 0) {
+        const stats = {};
+        results.forEach((result) => {
+          const examType = result.examType;
+          if (!stats[examType]) {
+            stats[examType] = { scores: [], correct: 0, total: 0, count: 0 };
           }
+          stats[examType].scores.push(result.score);
+          const correct = result.correct || 0;
+          const total = result.total || 0;
+          stats[examType].correct += correct;
+          stats[examType].total += total;
+          stats[examType].count += 1;
+        });
+        Object.keys(stats).forEach((examType) => {
+          const typeStats = stats[examType];
+          typeStats.bestScore = typeStats.scores.length > 0 ? Math.max(...typeStats.scores) : 0;
+          typeStats.avgScore = typeStats.scores.length > 0
+            ? Math.round(typeStats.scores.reduce((a, b) => a + b, 0) / typeStats.scores.length)
+            : 0;
+          typeStats.accuracy = typeStats.total > 0 && typeStats.correct >= 0
+            ? Math.round((typeStats.correct / typeStats.total) * 100)
+            : 0;
+        });
+        setStatsByTestType(stats);
+        try {
+          const cached = localStorage.getItem(`dashboard_results_${user.uid}`);
+          if (cached) {
+            const cachedData = JSON.parse(cached);
+            cachedData.stats = stats;
+            cachedData.timestamp = Date.now();
+            localStorage.setItem(`dashboard_results_${user.uid}`, JSON.stringify(cachedData));
+          }
+        } catch (err) {
+          console.error("Error caching stats:", err);
         }
-        
-        setLoading(false);
-      },
-      (error) => {
-        console.error("Error fetching results:", error);
-        setLoading(false);
       }
-    );
+      setLoading(false);
+    };
 
-    return () => unsubscribe();
-  }, [user]);
+    let collegeCode = null;
+    const setupListeners = (code) => {
+      collegeCodeRef.current = code;
+      const unsubTop = onSnapshot(
+        collection(db, "results"),
+        (snapshot) => {
+          topLevelDocsRef.current = snapshot.docs || [];
+          mergeAndProcess();
+        },
+        (err) => {
+          console.error("Error fetching results:", err);
+          setLoading(false);
+        }
+      );
+      if (!code) {
+        return () => unsubTop();
+      }
+      const collegeRef = collection(db, "results", "byCollege", code);
+      const collegeQuery = query(collegeRef, where("uid", "==", user.uid));
+      const unsubCollege = onSnapshot(
+        collegeQuery,
+        (snapshot) => {
+          collegeDocsRef.current = snapshot.docs || [];
+          mergeAndProcess();
+        },
+        (err) => {
+          console.error("Error fetching college results:", err);
+          setLoading(false);
+        }
+      );
+      return () => {
+        unsubTop();
+        unsubCollege();
+      };
+    };
+
+    const unsubRef = { current: () => {} };
+    (async () => {
+      try {
+        const idsGroup = collectionGroup(db, "ids");
+        const studentSnap = await getDocs(
+          query(idsGroup, where("uid", "==", user.uid), limit(1))
+        );
+        if (!studentSnap.empty) {
+          const studentDoc = studentSnap.docs[0];
+          const data = studentDoc.data();
+          collegeCode =
+            (data.college != null && String(data.college).trim() !== "")
+              ? String(data.college).trim()
+              : studentDoc.ref.parent.parent.id;
+        }
+      } catch (err) {
+        console.error("Error fetching student college:", err);
+      }
+      unsubRef.current = setupListeners(collegeCode);
+    })();
+
+    return () => unsubRef.current();
+  }, [user, role]);
 
   // Filter history based on selected test type
   const filteredHistory = useMemo(() => {
@@ -412,6 +470,18 @@ export default function Dashboard() {
         {loading ? (
           <div className="text-center py-8">
             <p className="text-slate-500">Loading your data...</p>
+          </div>
+        ) : role !== "student" ? (
+          <div className="bg-white border rounded-lg p-8 text-center">
+            <p className="text-slate-600 mb-4">
+              This dashboard is for students. Your test results and stats will appear here when you are signed in as a student.
+            </p>
+            <Link
+              href="/select-test"
+              className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            >
+              Go to Tests
+            </Link>
           </div>
         ) : (
           <>

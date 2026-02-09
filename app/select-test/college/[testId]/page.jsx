@@ -350,6 +350,16 @@ export default function CollegeTestPage() {
       }
     });
 
+    // JEE Mains: +4 per correct, -1 per wrong, 0 for unattempted (no negative total)
+    const isJeeMains = (test.testType || "").toLowerCase().includes("jee mains");
+    const numCorrect = correctCount.length;
+    const numWrong = wrongCount.length;
+    const displayScore = isJeeMains
+      ? Math.max(0, numCorrect * 4 - numWrong * 1)
+      : score;
+    const maxMarks = isJeeMains ? questions.length * 4 : questions.length;
+    const percentage = maxMarks > 0 ? Math.round((displayScore / maxMarks) * 100) : 0;
+
     // Convert answers to Firebase-compatible format (no nested arrays, no undefined)
     // For multiple-answer questions, convert array to comma-separated string
     const formattedAnswers = [];
@@ -432,15 +442,17 @@ export default function CollegeTestPage() {
       studentName: resultStudentName,
       class: resultStudentClass,
       testId,
-      score,
+      testName: test?.name ?? "",
+      score: displayScore,
       total: questions.length,
-      correct: correctCount.length,
-      wrong: wrongCount.length,
+      correct: numCorrect,
+      wrong: numWrong,
       skipped: notVisitedCount,
       answers: formattedAnswers,
       testType: test.testType || "",
       subjectWise,
       submittedAt: new Date(),
+      ...(isJeeMains && { marks: displayScore, maxMarks }),
     };
     if (collegeCode && String(collegeCode).trim()) {
       const code = String(collegeCode).trim();
@@ -450,13 +462,14 @@ export default function CollegeTestPage() {
     }
 
     setFinalScore({
-      score,
+      score: displayScore,
       total: questions.length,
-      correct: correctCount.length,
-      wrong: wrongCount.length,
+      correct: numCorrect,
+      wrong: numWrong,
       unattempted: unattempted.length,
-      percentage: Math.round((score / questions.length) * 100),
+      percentage,
       timeTaken: test.duration * 60 - timeLeft,
+      isJeeMains,
     });
   };
 
@@ -613,9 +626,9 @@ export default function CollegeTestPage() {
           <div className="p-6">
             <div className="text-center mb-6">
               <p className="text-3xl font-bold text-gray-800">
-                {finalScore.score} <span className="text-gray-400 text-xl">/ {finalScore.total}</span>
+                {finalScore.score} <span className="text-gray-400 text-xl">/ {finalScore.isJeeMains ? finalScore.total * 4 : finalScore.total}</span>
               </p>
-              <p className="text-gray-500">Questions Correct</p>
+              <p className="text-gray-500">{finalScore.isJeeMains ? "Marks (Correct +4, Wrong -1)" : "Questions Correct"}</p>
             </div>
 
             {/* Stats Grid */}
