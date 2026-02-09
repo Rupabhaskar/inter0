@@ -18,6 +18,7 @@ import { db } from "@/lib/firebase";
 function OptimizedImage({ src, alt, className, width = 400, height = 300 }) {
   if (!src) return null;
   if (src.startsWith("blob:")) {
+    // eslint-disable-next-line @next/next/no-img-element -- blob URLs require <img>
     return <img src={src} alt={alt} className={className} />;
   }
   return (
@@ -884,7 +885,7 @@ function QuestionSection({
             <ul className="list-disc list-inside space-y-1">
               <li><strong>Question:</strong> The question text (required)</li>
               <li><strong>Option A, B, C, D:</strong> Answer options (at least 2 required)</li>
-              <li><strong>Correct Answer:</strong> Single answer (e.g., "A") or multiple answers (e.g., "A,C" or "A, C")</li>
+              <li><strong>Correct Answer:</strong> Single answer (e.g., &quot;A&quot;) or multiple answers (e.g., &quot;A,C&quot; or &quot;A, C&quot;)</li>
               <li><strong>Subject:</strong> Subject/Section name (optional, e.g., Physics, Chemistry, Math)</li>
               <li>First row must contain column headers exactly as shown above</li>
               <li>Empty rows or rows with missing Question will be skipped</li>

@@ -37,7 +37,7 @@ export default function ResultPage() {
     }
 
     const calculated = calculateResult(questions, answers);
-    setResult(calculated);
+    queueMicrotask(() => setResult(calculated));
 
     // ⏱ Countdown
     const interval = setInterval(() => {

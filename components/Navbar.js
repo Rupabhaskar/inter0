@@ -35,7 +35,7 @@ export default function Navbar() {
   /* Resolve college name for logged-in users (students + college admin/user) – show beside logo on all pages */
   useEffect(() => {
     if (!user?.uid) {
-      setCollegeName(null);
+      queueMicrotask(() => setCollegeName(null));
       return;
     }
     let cancelled = false;

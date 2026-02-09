@@ -56,9 +56,11 @@ export default function LeaderboardPage() {
   useEffect(() => {
     const code = (collegeCode != null && String(collegeCode).trim() !== "") ? String(collegeCode).trim() : null;
     if (!code) {
-      setResults([]);
-      setEnrichedResults([]);
-      setLoading(false);
+      queueMicrotask(() => {
+        setResults([]);
+        setEnrichedResults([]);
+        setLoading(false);
+      });
       return;
     }
 

@@ -17,7 +17,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user) {
-      setLoading(false);
+      queueMicrotask(() => setLoading(false));
       return;
     }
 
@@ -389,7 +389,7 @@ export default function Dashboard() {
               <div className="space-y-2">
                 <p className="font-semibold mb-2">Dashboard Information</p>
                 <div className="space-y-1 text-sm">
-                  <p><strong>Tests Taken:</strong> Total number of tests you've completed</p>
+                  <p><strong>Tests Taken:</strong> Total number of tests you&apos;ve completed</p>
                   <p><strong>Average Score:</strong> Your average score across all tests</p>
                   <p><strong>Accuracy:</strong> Percentage of correct answers (Correct/Total × 100)</p>
                   <p><strong>Best Score:</strong> Your highest score across all tests</p>

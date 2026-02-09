@@ -55,6 +55,7 @@ function CloudinaryImage({ src, alt, type = "question", priority = false }) {
 
   return (
     <div className={`relative inline-block ${sizeClasses}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- dynamic/error state image */}
       <img
         src={src}
         alt={alt}
@@ -153,6 +154,7 @@ export default function ExamTestPage({ params }) {
   /* ================= AUTO SUBMIT ================= */
   useEffect(() => {
     if (started && timeLeft === 0 && !submitted) submitTest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- submitTest intentionally excluded
   }, [timeLeft, started, submitted]);
 
   /* ================= FULLSCREEN DETECT ================= */
@@ -422,6 +424,7 @@ export default function ExamTestPage({ params }) {
   useEffect(() => {
     if (selectedSubject && filteredQuestions.length > 0) setCurrent(0);
     else if (!selectedSubject) setCurrent(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset current on subject change only
   }, [selectedSubject]);
 
   useEffect(() => {
@@ -433,6 +436,7 @@ export default function ExamTestPage({ params }) {
       const originalIndex = getOriginalIndex(current);
       setVisited((prev) => new Set([...prev, originalIndex]));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- track visited on current change only
   }, [current]);
 
   const navigateToSubject = (subject) => {

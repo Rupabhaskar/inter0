@@ -69,7 +69,7 @@ function ClassesPageContent() {
   }, [collegeCode]);
 
   useEffect(() => {
-    fetchClasses();
+    queueMicrotask(() => fetchClasses());
   }, [fetchClasses]);
 
   const createClass = async () => {
