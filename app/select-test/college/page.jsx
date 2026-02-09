@@ -1,9 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, collectionGroup, getDocs, query, where, limit } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { questionDb } from "@/lib/firebaseQuestionDb";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -22,50 +19,19 @@ export default function CollegeTestsPage() {
         return;
       }
       try {
-        // Get student's college code: schema students/{collegeCode}/ids/{uid}
-        const idsGroup = collectionGroup(db, "ids");
-        const studentQ = query(
-          idsGroup,
-          where("uid", "==", user.uid),
-          limit(1)
-        );
-        const studentSnap = await getDocs(studentQ);
-        if (studentSnap.empty) {
-          setTests([]);
-          setLoading(false);
-          return;
-        }
-        const studentDoc = studentSnap.docs[0];
-        const studentData = studentDoc.data();
-        // Student's college code (e.g. SCRRC) – in second Firestore project, collection name = college code
-        const collegeCode =
-          (studentData.college != null && String(studentData.college).trim() !== "")
-            ? String(studentData.college).trim()
-            : studentDoc.ref.parent.parent.id;
-
-        // Second Firestore project (questionDb): collection name = college code. If student's college code matches, show tests from that collection.
-        const testsRef = collection(questionDb, collegeCode);
-        // Results schema: results (collection) → byCollege (doc) → collegeCode (subcollection) → resultId → info
-        const resultsRef = collection(db, "results", "byCollege", collegeCode);
-        const [testsSnap, resultsSnap] = await Promise.all([
-          getDocs(testsRef),
-          getDocs(query(resultsRef, where("uid", "==", user.uid))),
-        ]);
-
-        // Build test list: use document id as test id so we can open /select-test/college/[testId]
-        const data = testsSnap.docs.map((docSnap) => {
-          const testId = docSnap.id;
-          const { name, duration, testType } = docSnap.data();
-          return { id: testId, name, duration, testType };
+        const token = await user.getIdToken();
+        const res = await fetch("/college/api/questions", {
+          headers: { Authorization: `Bearer ${token}` },
         });
-        setTests(data);
-
-        if (!resultsSnap.empty) {
-          const ids = new Set(
-            resultsSnap.docs.map((d) => d.data().testId).filter(Boolean)
-          );
-          setSubmittedTestIds(ids);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `API ${res.status}`);
         }
+        const data = await res.json();
+        setTests(data.tests || []);
+        setSubmittedTestIds(
+          new Set(Array.isArray(data.submittedTestIds) ? data.submittedTestIds : [])
+        );
       } catch (err) {
         console.error(err);
         setTests([]);
@@ -75,7 +41,7 @@ export default function CollegeTestsPage() {
     };
 
     loadTests();
-  }, [user?.uid]);
+  }, [user]);
 
   if (loading) {
     return (

@@ -2,58 +2,36 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import ProtectedRoute from "@/components/ProtectedRoute";
-
-const TESTS_COLLECTION = "superadminTests";
-
-// Map URL exam slug to testType filter (case-insensitive match).
-// JEE Advanced: only tests that explicitly have "advanced"; "JEE" / "JEE Mains" stay on JEE Mains.
-function testTypeMatchesExam(testType, examSlug) {
-  if (!testType || !examSlug) return false;
-  const normalized = (t) =>
-    String(t)
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, " ");
-  const examLabel = examSlug.replace(/-/g, " ");
-  const a = normalized(testType);
-  const b = normalized(examLabel);
-
-  // JEE Advanced: show when testType mentions "advance" or "advanced"
-  if (b === "jee advanced") {
-    return a.includes("advanced") || a.includes("advance");
-  }
-  // JEE Mains: show "JEE Mains" or generic "JEE", but NOT "JEE Advanced"
-  if (b === "jee mains") {
-    return (a.includes("jee") || a.includes("mains")) && !a.includes("advanced");
-  }
-
-  return a === b || a.includes(b) || b.includes(a);
-}
+import { useAuth } from "@/components/AuthProvider";
 
 export default function ExamPage({ params }) {
   const { exam } = use(params);
+  const { user } = useAuth();
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     const load = async () => {
-      if (!exam) {
+      if (!exam || !user?.uid) {
         setLoading(false);
         return;
       }
       setError("");
       setLoading(true);
       try {
-        const snap = await getDocs(collection(db, TESTS_COLLECTION));
-        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        const filtered = all.filter((t) =>
-          testTypeMatchesExam(t.testType, exam)
+        const token = await user.getIdToken();
+        const res = await fetch(
+          `/api/exam-tests?exam=${encodeURIComponent(exam)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
         );
-        setTests(filtered);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `API ${res.status}`);
+        }
+        const data = await res.json();
+        setTests(data.tests || []);
       } catch (err) {
         console.error(err);
         setError("Failed to load tests.");
@@ -62,7 +40,7 @@ export default function ExamPage({ params }) {
       }
     };
     load();
-  }, [exam]);
+  }, [exam, user]);
 
   const examLabel = exam ? exam.replace(/-/g, " ").toUpperCase() : "";
 

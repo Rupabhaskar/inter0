@@ -3,17 +3,7 @@
 import { use, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import {
-  collection,
-  collectionGroup,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-  limit,
-  addDoc,
-} from "firebase/firestore";
+import { collection, addDoc } from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
@@ -87,8 +77,13 @@ export default function ExamTestPage({ params }) {
   const [selectedSubject, setSelectedSubject] = useState("");
   const [markedForReview, setMarkedForReview] = useState(new Set());
   const [visited, setVisited] = useState(new Set());
+  const [studentInfo, setStudentInfo] = useState({
+    studentName: "",
+    studentClass: "",
+    collegeCode: null,
+  });
 
-  /* ================= LOAD TEST FROM SUPERADMIN TESTS ================= */
+  /* ================= LOAD TEST (server cache API + ID token) ================= */
   useEffect(() => {
     const load = async () => {
       if (!testId) {
@@ -96,49 +91,63 @@ export default function ExamTestPage({ params }) {
         router.push("/select-test");
         return;
       }
-
-      const [testSnap, qSnap] = await Promise.all([
-        getDoc(doc(db, TESTS_COLLECTION, testId)),
-        getDocs(collection(db, TESTS_COLLECTION, testId, "questions")),
-      ]);
-
-      if (!testSnap.exists()) {
+      const user = auth.currentUser;
+      if (!user?.uid) {
         setLoading(false);
-        router.push("/select-test");
         return;
       }
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(
+          `/api/exam-tests?testId=${encodeURIComponent(testId)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          if (res.status === 404) {
+            router.push("/select-test");
+            return;
+          }
+          throw new Error(err.error || `API ${res.status}`);
+        }
+        const data = await res.json();
+        if (!data.test || !data.questions?.length) {
+          router.push("/select-test");
+          return;
+        }
 
-      const testData = testSnap.data();
-      const questionsData = qSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setTest(data.test);
+        setQuestions(data.questions);
+        setStudentInfo({
+          studentName: data.studentName ?? "",
+          studentClass: data.studentClass ?? "",
+          collegeCode: data.collegeCode ?? null,
+        });
 
-      if (questionsData.length === 0) {
-        setLoading(false);
-        router.push("/select-test");
-        return;
-      }
-
-      setTest(testData);
-      setQuestions(questionsData);
-
-      if (questionsData.length > 0) {
+        const questionsData = data.questions;
         const firstQ = questionsData[0];
-        const imagesToPreload = [];
-        if (firstQ.imageUrl) imagesToPreload.push(firstQ.imageUrl);
-        if (firstQ.optionImages) {
-          firstQ.optionImages.forEach((img) => {
-            if (img) imagesToPreload.push(img);
+        if (firstQ) {
+          const imagesToPreload = [];
+          if (firstQ.imageUrl) imagesToPreload.push(firstQ.imageUrl);
+          if (firstQ.optionImages) {
+            firstQ.optionImages.forEach((img) => {
+              if (img) imagesToPreload.push(img);
+            });
+          }
+          imagesToPreload.forEach((src) => {
+            if (src?.includes("cloudinary.com")) {
+              const optimized = src.replace("/upload/", "/upload/f_auto,q_auto,w_800/");
+              const img = new window.Image();
+              img.src = optimized;
+            }
           });
         }
-        imagesToPreload.forEach((src) => {
-          if (src?.includes("cloudinary.com")) {
-            const optimized = src.replace("/upload/", "/upload/f_auto,q_auto,w_800/");
-            const img = new window.Image();
-            img.src = optimized;
-          }
-        });
+      } catch (err) {
+        console.error(err);
+        router.push("/select-test");
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     };
 
     load();
@@ -267,43 +276,13 @@ export default function ExamTestPage({ params }) {
       else formattedAnswers.push(ans);
     }
 
-    let studentName = auth.currentUser?.displayName || "Unknown";
-    let studentClass = "";
-    let collegeCode = null;
-    try {
-      const uid = auth.currentUser?.uid;
-      if (uid) {
-        const idsGroup = collectionGroup(db, "ids");
-        const studentQ = query(idsGroup, where("uid", "==", uid), limit(1));
-        const studentSnap = await getDocs(studentQ);
-        if (!studentSnap.empty) {
-          const studentDoc = studentSnap.docs[0];
-          const s = studentDoc.data();
-          collegeCode =
-            (s?.college != null && String(s.college).trim() !== "")
-              ? String(s.college).trim()
-              : studentDoc.ref.parent.parent.id;
-          studentName = s?.name != null ? String(s.name).trim() : studentName;
-          studentClass =
-            (s?.course != null && String(s.course).trim() !== "")
-              ? String(s.course).trim()
-              : (s?.class != null ? String(s.class).trim() : "");
-        } else {
-          const legacyQ = query(
-            collection(db, "students"),
-            where("uid", "==", uid)
-          );
-          const legacySnap = await getDocs(legacyQ);
-          if (!legacySnap.empty) {
-            const s = legacySnap.docs[0].data();
-            studentName = s?.name || studentName;
-            studentClass = s?.course || s?.class || "";
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Student lookup failed:", e);
-    }
+    const studentName =
+      studentInfo.studentName ||
+      auth.currentUser?.displayName ||
+      auth.currentUser?.email?.split("@")[0] ||
+      "Student";
+    const studentClass = studentInfo.studentClass ?? "";
+    const collegeCode = studentInfo.collegeCode ?? null;
 
     const subjectWise = {};
     questions.forEach((q, i) => {
