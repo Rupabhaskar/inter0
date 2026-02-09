@@ -3,8 +3,19 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
-import { collection, addDoc } from "firebase/firestore";
+import {
+  collection,
+  collectionGroup,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  limit,
+  addDoc,
+} from "firebase/firestore";
 import { db, auth } from "@/lib/firebase";
+import { questionDb } from "@/lib/firebaseQuestionDb";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
 /* ================= CLOUDINARY IMAGE COMPONENT (next/image optimized) ================= */
@@ -79,8 +90,74 @@ export default function CollegeTestPage() {
   const [studentName, setStudentName] = useState(""); // From student doc (students/{collegeCode}/ids)
   const [studentClass, setStudentClass] = useState(""); // course/class from student doc
 
-  /* ================= LOAD TEST (server cache API + ID token) ================= */
+  /* ================= LOAD TEST (API with Firestore fallback when Question DB not configured) ================= */
   useEffect(() => {
+    const applyTestData = (questionsData, testData, collegeCodeVal, name, cls) => {
+      setTest(testData);
+      setQuestions(questionsData);
+      setCollegeCode(collegeCodeVal ?? null);
+      setStudentName(name ?? "");
+      setStudentClass(cls ?? "");
+      if (questionsData.length > 0) {
+        const firstQ = questionsData[0];
+        const imagesToPreload = [];
+        if (firstQ.imageUrl) imagesToPreload.push(firstQ.imageUrl);
+        if (firstQ.optionImages) {
+          firstQ.optionImages.forEach((img) => {
+            if (img) imagesToPreload.push(img);
+          });
+        }
+        imagesToPreload.forEach((src) => {
+          if (src?.includes("cloudinary.com")) {
+            const optimized = src.replace("/upload/", "/upload/f_auto,q_auto,w_800/");
+            const img = new window.Image();
+            img.src = optimized;
+          }
+        });
+      }
+      const questionsWithImages = questionsData.filter(
+        (q) => q.imageUrl || (q.optionImages && q.optionImages.some((img) => img))
+      );
+      if (questionsWithImages.length > 0) {
+        fetch("/college/api/image-cache", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ questions: questionsWithImages }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.success) console.log(`Cache: ${d.cacheHits} hits, ${d.stored} stored`);
+          })
+          .catch((e) => console.error("Image cache error:", e));
+      }
+    };
+
+    const loadFromFirestore = async () => {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      const idsGroup = collectionGroup(db, "ids");
+      const studentSnap = await getDocs(query(idsGroup, where("uid", "==", uid), limit(1)));
+      if (studentSnap.empty) return;
+      const studentDoc = studentSnap.docs[0];
+      const studentData = studentDoc.data();
+      const collegeCodeVal =
+        (studentData.college != null && String(studentData.college).trim() !== "")
+          ? String(studentData.college).trim()
+          : studentDoc.ref.parent.parent.id;
+      const [testSnap, qSnap] = await Promise.all([
+        getDoc(doc(questionDb, collegeCodeVal, testId)),
+        getDocs(collection(questionDb, collegeCodeVal, testId, "questions")),
+      ]);
+      if (!testSnap.exists()) return;
+      const questionsData = qSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const name = studentData.name != null ? String(studentData.name).trim() : "";
+      const cls =
+        (studentData.course != null && String(studentData.course).trim() !== "")
+          ? String(studentData.course).trim()
+          : (studentData.class != null ? String(studentData.class).trim() : "");
+      applyTestData(questionsData, testSnap.data(), collegeCodeVal, name, cls);
+    };
+
     const load = async () => {
       const user = auth.currentUser;
       if (!user?.uid) {
@@ -93,62 +170,35 @@ export default function CollegeTestPage() {
           `/college/api/questions?testId=${encodeURIComponent(testId)}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `API ${res.status}`);
-        }
-        const data = await res.json();
-        if (!data.test || !data.questions) {
-          setTest(null);
-          setQuestions([]);
-          setLoading(false);
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.test || !data.questions) {
+            setTest(null);
+            setQuestions([]);
+            setLoading(false);
+            return;
+          }
+          applyTestData(
+            data.questions,
+            data.test,
+            data.collegeCode,
+            data.studentName,
+            data.studentClass
+          );
           return;
         }
-
-        const questionsData = data.questions;
-        setCollegeCode(data.collegeCode ?? null);
-        setStudentName(data.studentName ?? "");
-        setStudentClass(data.studentClass ?? "");
-        setTest(data.test);
-        setQuestions(questionsData);
-
-        // Preload first question's images immediately
-        if (questionsData.length > 0) {
-          const firstQ = questionsData[0];
-          const imagesToPreload = [];
-          if (firstQ.imageUrl) imagesToPreload.push(firstQ.imageUrl);
-          if (firstQ.optionImages) {
-            firstQ.optionImages.forEach((img) => {
-              if (img) imagesToPreload.push(img);
-            });
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 503 && (err.error || "").toLowerCase().includes("question db")) {
+          try {
+            await loadFromFirestore();
+          } catch (e) {
+            console.error(e);
+            setTest(null);
+            setQuestions([]);
           }
-          imagesToPreload.forEach((src) => {
-            if (src.includes("cloudinary.com")) {
-              const optimized = src.replace("/upload/", "/upload/f_auto,q_auto,w_800/");
-              const img = new window.Image();
-              img.src = optimized;
-            }
-          });
+          return;
         }
-
-        // Cache images to Google Sheets (optional)
-        const questionsWithImages = questionsData.filter(
-          (q) => q.imageUrl || (q.optionImages && q.optionImages.some((img) => img))
-        );
-        if (questionsWithImages.length > 0) {
-          fetch("/college/api/image-cache", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ questions: questionsWithImages }),
-          })
-            .then((r) => r.json())
-            .then((d) => {
-              if (d.success) {
-                console.log(`Cache: ${d.cacheHits} hits, ${d.stored} stored`);
-              }
-            })
-            .catch((err) => console.error("Image cache error:", err));
-        }
+        throw new Error(err.error || `API ${res.status}`);
       } catch (err) {
         console.error(err);
         setTest(null);
@@ -521,6 +571,7 @@ export default function CollegeTestPage() {
   };
 
   if (loading) return <div className="p-10">Loading...</div>;
+  if (!test) return <div className="p-10 text-center text-gray-500">Test not found.</div>;
 
   /* ================= SCORE CARD ================= */
   if (submitted && finalScore) {
@@ -547,7 +598,7 @@ export default function CollegeTestPage() {
           {/* Header */}
           <div className={`${gradeInfo.bg} p-6 text-center`}>
             <h1 className="text-2xl font-bold text-gray-800 mb-2">Test Completed!</h1>
-            <p className="text-gray-600">{test.name}</p>
+            <p className="text-gray-600">{test?.name ?? "Test"}</p>
           </div>
 
           {/* Score Circle */}
@@ -771,7 +822,7 @@ export default function CollegeTestPage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
           <div className="lg:col-span-3 bg-white p-4 sm:p-6 border rounded">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="font-bold text-lg">{test.name}</h2>
+              <h2 className="font-bold text-lg">{test?.name ?? "Test"}</h2>
             </div>
 
           {/* Question Text */}
