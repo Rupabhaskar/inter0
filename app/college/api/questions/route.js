@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebaseAdmin";
-import { adminQuestionDb } from "@/lib/firebaseAdminQuestionDb";
+import { getAdminQuestionDb } from "@/lib/firebaseAdminQuestionDb";
 
 // In-memory caches to reduce Firestore reads
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes for tests/questions
@@ -112,6 +112,7 @@ export async function GET(req) {
       let tests = cached;
 
       if (!tests) {
+        const adminQuestionDb = getAdminQuestionDb();
         if (!adminQuestionDb) {
           return NextResponse.json(
             { error: "Question DB not configured (QUESTION_DB_* env)" },
@@ -157,6 +158,7 @@ export async function GET(req) {
       });
     }
 
+    const adminQuestionDb = getAdminQuestionDb();
     if (!adminQuestionDb) {
       return NextResponse.json(
         { error: "Question DB not configured (QUESTION_DB_* env)" },
