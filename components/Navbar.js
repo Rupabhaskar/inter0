@@ -26,31 +26,35 @@ export default function Navbar() {
   const [mounted, setMounted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [collegeName, setCollegeName] = useState(null);
+  const [collegeLogoUrl, setCollegeLogoUrl] = useState(null);
 
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 0);
     return () => clearTimeout(t);
   }, []);
 
-  /* Resolve college name for logged-in users (students + college admin/user) – show beside logo on all pages */
+  /* Resolve college name + logo for logged-in users (students + college admin/user) – show in navbar */
   useEffect(() => {
     if (!user?.uid) {
-      queueMicrotask(() => setCollegeName(null));
+      queueMicrotask(() => {
+        setCollegeName(null);
+        setCollegeLogoUrl(null);
+      });
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        // College admin: name from own user doc
+        // College admin: name + logo from own user doc
         if (role === "collegeAdmin") {
           const snap = await getDoc(doc(db, "users", user.uid));
           if (cancelled) return;
           const data = snap.exists() ? snap.data() : {};
-          const name = data.collegeName || data.name || data.email || data.collegeShort || null;
-          setCollegeName(name);
+          setCollegeName(data.collegeName || data.name || data.email || data.collegeShort || null);
+          setCollegeLogoUrl(data.logoUrl || null);
           return;
         }
-        // College user: name from linked admin's user doc
+        // College user: name + logo from linked admin's user doc
         if (role === "collegeuser") {
           const snap = await getDoc(doc(db, "users", user.uid));
           if (cancelled) return;
@@ -58,16 +62,17 @@ export default function Navbar() {
           const adminUid = data.collegeAdminUid;
           if (!adminUid) {
             setCollegeName(null);
+            setCollegeLogoUrl(null);
             return;
           }
           const adminSnap = await getDoc(doc(db, "users", adminUid));
           if (cancelled) return;
           const adminData = adminSnap.exists() ? adminSnap.data() : {};
-          const name = adminData.collegeName || adminData.name || adminData.email || adminData.collegeShort || null;
-          setCollegeName(name);
+          setCollegeName(adminData.collegeName || adminData.name || adminData.email || adminData.collegeShort || null);
+          setCollegeLogoUrl(adminData.logoUrl || null);
           return;
         }
-        // Student: resolve college code then fetch admin doc for name
+        // Student: resolve college code then fetch admin doc for name + logo
         let collegeCode = null;
         try {
           const q = query(
@@ -103,6 +108,7 @@ export default function Navbar() {
         }
         if (cancelled || !collegeCode) {
           setCollegeName(null);
+          setCollegeLogoUrl(null);
           return;
         }
         const adminSnap = await getDocs(
@@ -114,13 +120,19 @@ export default function Navbar() {
           )
         );
         if (cancelled) return;
-        const name =
-          adminSnap.empty
-            ? collegeCode
-            : (adminSnap.docs[0].data().collegeName || adminSnap.docs[0].data().name || adminSnap.docs[0].data().email || collegeCode);
-        setCollegeName(name);
+        if (adminSnap.empty) {
+          setCollegeName(collegeCode);
+          setCollegeLogoUrl(null);
+        } else {
+          const adminData = adminSnap.docs[0].data();
+          setCollegeName(adminData.collegeName || adminData.name || adminData.email || collegeCode);
+          setCollegeLogoUrl(adminData.logoUrl || null);
+        }
       } catch (_) {
-        if (!cancelled) setCollegeName(null);
+        if (!cancelled) {
+          setCollegeName(null);
+          setCollegeLogoUrl(null);
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -129,6 +141,7 @@ export default function Navbar() {
   const hideNavbar =
     pathname === "/" || pathname.startsWith("/test");
   const loginOnlyLogo = pathname === "/login" || pathname === "/college";
+  const isCollegeDashboard = pathname.startsWith("/college/dashboard");
 
   // Login page: show only Ranksprint logo (zoomed), no menu
   if (mounted && loginOnlyLogo) {
@@ -166,22 +179,47 @@ export default function Navbar() {
 
   return (
     <nav className="bg-white border-b border-slate-200 overflow-hidden">
-      <div className="max-w-7xl mx-auto px-4 h-16 md:h-20 flex items-center justify-between gap-4 min-h-0">
-        {/* LOGO + College name (for students) */}
+      <div className="max-w-7xl mx-auto px-4 h-20 md:h-24 flex items-center justify-between gap-4 min-h-0">
+        {/* On college dashboard: RankSprint only. Else: college logo + name when set, else RankSprint */}
         <div className="flex items-center gap-3 shrink-0 min-w-0">
-          <Link href="/" className="flex items-center shrink-0 max-h-full py-1">
-            <Image
-              src="/Ranksprint.png"
-              alt="RankSprint logo – Inter JEE mock test and EAMCET mock test platform"
-              width={320}
-              height={96}
-              className="h-14 md:h-[10rem] w-auto max-h-full object-contain object-left"
-              priority
-            />
-          </Link>
-          {collegeName && (
-            <span className="hidden sm:inline text-slate-600 text-sm md:text-base font-medium border-l border-slate-300 pl-3 truncate max-w-[180px] md:max-w-[220px]" title={collegeName}>
-              {collegeName}
+          {collegeLogoUrl && !isCollegeDashboard ? (
+            <div className="flex items-center gap-3">
+              <div
+                className="flex items-center justify-center rounded-full w-16 h-16 md:w-20 md:h-20 overflow-hidden border-2 border-white shadow-lg bg-white shrink-0 ring-2 ring-slate-200"
+                title={collegeName || "College partner"}
+              >
+                {collegeLogoUrl.includes("cloudinary.com") ? (
+                  <Image
+                    src={collegeLogoUrl}
+                    alt={collegeName || "College logo"}
+                    width={96}
+                    height={96}
+                    className="h-full w-full object-contain p-1.5"
+                  />
+                ) : (
+                  <img
+                    src={collegeLogoUrl}
+                    alt={collegeName || "College logo"}
+                    className="h-full w-full object-contain p-1.5"
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <Link href="/" className="flex items-center shrink-0 max-h-full py-1">
+              <Image
+                src="/Ranksprint.png"
+                alt="RankSprint logo – Inter JEE mock test and EAMCET mock test platform"
+                width={320}
+                height={96}
+                className="h-16 md:h-24 w-auto max-h-full object-contain object-left scale-110 md:scale-125"
+                priority
+              />
+            </Link>
+          )}
+          {collegeName && !isCollegeDashboard && (
+            <span className="hidden sm:inline text-slate-600 text-sm md:text-base font-medium border-l border-slate-300 pl-3 truncate max-w-[280px] md:max-w-[320px]" title={`${collegeName} | RankSprint`}>
+              {collegeName} <span className="text-slate-400">|</span> RankSprint
             </span>
           )}
         </div>
@@ -226,9 +264,18 @@ export default function Navbar() {
       {/* MOBILE MENU */}
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-slate-200">
-          {collegeName && (
-            <div className="px-4 py-3 text-slate-600 text-sm font-medium border-b border-slate-100">
-              Collaborating with {collegeName}
+          {(collegeLogoUrl || collegeName) && !isCollegeDashboard && (
+            <div className="px-4 py-3 flex items-center gap-3 text-slate-600 text-sm font-medium border-b border-slate-100">
+              {collegeLogoUrl && (
+                <div className="flex items-center justify-center rounded-full w-14 h-14 overflow-hidden border-2 border-slate-200 shadow bg-white shrink-0">
+                  {collegeLogoUrl.includes("cloudinary.com") ? (
+                    <Image src={collegeLogoUrl} alt="" width={56} height={56} className="h-full w-full object-contain p-1" />
+                  ) : (
+                    <img src={collegeLogoUrl} alt="" className="h-full w-full object-contain p-1" />
+                  )}
+                </div>
+              )}
+              {collegeName && <span>In collaboration with {collegeName} | RankSprint</span>}
             </div>
           )}
           <Link

@@ -51,6 +51,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import Link from "next/link";
+import Image from "next/image";
 import clsx from "clsx";
 import { dashboardNav } from "./_config/nav";
 
@@ -59,6 +60,8 @@ export default function DashboardLayout({ children }) {
   const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
+  const [collegeLogoUrl, setCollegeLogoUrl] = useState(null);
+  const [collegeName, setCollegeName] = useState(null);
 
   // Never render dashboard until login is verified; redirect to /college if not logged in
   useEffect(() => {
@@ -122,6 +125,32 @@ export default function DashboardLayout({ children }) {
     });
   }, [router, pathname]);
 
+  // Resolve college logo + name for sidebar (admin = own doc; collegeuser = admin's doc)
+  useEffect(() => {
+    if (!userData) {
+      setCollegeLogoUrl(null);
+      setCollegeName(null);
+      return;
+    }
+    if (userData.role === "collegeAdmin") {
+      setCollegeLogoUrl(userData.logoUrl || null);
+      setCollegeName(userData.collegeName || userData.collegeShort || null);
+      return;
+    }
+    if (userData.role === "collegeuser" && userData.collegeAdminUid) {
+      let cancelled = false;
+      getDoc(doc(db, "users", userData.collegeAdminUid)).then((snap) => {
+        if (cancelled) return;
+        const data = snap.exists() ? snap.data() : {};
+        setCollegeLogoUrl(data.logoUrl || null);
+        setCollegeName(data.collegeName || data.collegeShort || null);
+      });
+      return () => { cancelled = true; };
+    }
+    setCollegeLogoUrl(null);
+    setCollegeName(null);
+  }, [userData]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-white">
@@ -161,6 +190,52 @@ export default function DashboardLayout({ children }) {
     <div className="flex min-h-screen bg-white">
       {/* Sidebar */}
       <aside className="w-64 bg-gray-900 text-gray-200 p-4">
+        {/* College logo only (no RankSprint when college logo is set) */}
+        <div className="mb-6 flex flex-col items-center">
+          {collegeLogoUrl ? (
+            <div
+              className="flex items-center justify-center rounded-full w-16 h-16 overflow-hidden border-2 border-gray-600 shadow-lg bg-white shrink-0"
+              title={collegeName || "College"}
+            >
+              {collegeLogoUrl.includes("cloudinary.com") ? (
+                <Image
+                  src={collegeLogoUrl}
+                  alt={collegeName || "College logo"}
+                  width={64}
+                  height={64}
+                  className="h-full w-full object-contain p-1"
+                />
+              ) : (
+                <img
+                  src={collegeLogoUrl}
+                  alt={collegeName || "College logo"}
+                  className="h-full w-full object-contain p-1"
+                />
+              )}
+            </div>
+          ) : (
+            <Link
+              href="/"
+              className="flex items-center justify-center rounded-full w-14 h-14 border-2 border-gray-700 bg-amber-50 overflow-hidden shrink-0"
+              title="RankSprint"
+            >
+              <Image
+                src="/Ranksprint.png"
+                alt="RankSprint"
+                width={56}
+                height={56}
+                className="h-8 w-8 object-contain scale-110"
+                priority
+              />
+            </Link>
+          )}
+          {collegeName && (
+            <p className="text-xs text-gray-400 mt-2 text-center truncate w-full" title={collegeName}>
+              {collegeName}
+            </p>
+          )}
+        </div>
+
         <div className="mb-6">
           <h2 className="text-lg font-bold text-white">
             {isAdmin ? "College Admin" : "College User"}

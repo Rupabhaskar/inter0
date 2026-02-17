@@ -81,16 +81,25 @@ import { adminAuth, adminDb } from "../../../../lib/firebaseAdmin";
 import { NextResponse } from "next/server";
 import * as bcrypt from "bcryptjs";
 
+const FALLBACK_PASSWORD = "Sample@123";
+
+async function getCollegeStudentDefaultPassword(collegeAdminUid) {
+  if (!collegeAdminUid) return FALLBACK_PASSWORD;
+  const adminSnap = await adminDb.collection("users").doc(collegeAdminUid).get();
+  const pw = adminSnap.exists() ? adminSnap.data().collegeStudentDefaultPassword : null;
+  return (pw != null && String(pw).trim() !== "") ? String(pw).trim() : FALLBACK_PASSWORD;
+}
+
 export async function POST(req) {
   try {
     const { name, email, phone, course, rollNumber, collegeAdminUid, college } = await req.json();
 
-    const defaultPassword = "Sample@123";
+    const defaultPassword = await getCollegeStudentDefaultPassword(collegeAdminUid);
     const collegeCode = (college != null && String(college).trim() !== "")
       ? String(college).trim()
       : "_";
 
-    // Create Firebase Auth user
+    // Create Firebase Auth user with college's default password
     const user = await adminAuth.createUser({
       email,
       password: defaultPassword,

@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 
-const DEFAULT_DISPLAY_PASSWORD = "Sample@123";
+const FALLBACK_DISPLAY_PASSWORD = "Sample@123";
 
-export default function StudentTable({ students, loading, onRefresh, collegeCode = "_" }) {
+export default function StudentTable({ students, loading, onRefresh, collegeCode = "_", defaultPasswordDisplay }) {
   const [resettingId, setResettingId] = useState(null);
+  const displayPassword = (defaultPasswordDisplay != null && String(defaultPasswordDisplay).trim() !== "")
+    ? String(defaultPasswordDisplay).trim()
+    : FALLBACK_DISPLAY_PASSWORD;
 
   const deleteStudent = async (s) => {
     if (!confirm("Delete this student?")) return;
@@ -21,7 +24,7 @@ export default function StudentTable({ students, loading, onRefresh, collegeCode
   };
 
   const resetPassword = async (s) => {
-    if (!confirm(`Reset password for ${s.name || s.rollNumber} to default (${DEFAULT_DISPLAY_PASSWORD})?`)) return;
+    if (!confirm(`Reset password for ${s.name || s.rollNumber} to college default?`)) return;
     const uid = s.uid || s.id;
     setResettingId(uid);
     try {
@@ -83,7 +86,7 @@ export default function StudentTable({ students, loading, onRefresh, collegeCode
                   <td className="p-3">{s.email}</td>
                   <td className="p-3">{s.course}</td>
                   <td className="p-3 font-mono text-sm">
-                    {showDefaultPassword ? DEFAULT_DISPLAY_PASSWORD : "••••••••"}
+                    {showDefaultPassword ? displayPassword : "••••••••"}
                   </td>
                   <td className="p-3 flex flex-wrap gap-2">
                     <button

@@ -15,6 +15,7 @@ function StudentsPageContent() {
   const [collegeScopeUid, setCollegeScopeUid] = useState(null);
   const [collegeShort, setCollegeShort] = useState(null);
   const [maxStudents, setMaxStudents] = useState(null);
+  const [collegeStudentDefaultPassword, setCollegeStudentDefaultPassword] = useState(null);
   const [allStudents, setAllStudents] = useState([]);
   const [filteredStudents, setFilteredStudents] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -43,6 +44,7 @@ function StudentsPageContent() {
             setCollegeScopeUid(user.uid);
             setCollegeShort(data.collegeShort ?? null);
             setMaxStudents(data.maxStudents ?? null);
+            setCollegeStudentDefaultPassword(data.collegeStudentDefaultPassword ?? null);
           } else {
             setCollegeScopeUid(data.collegeAdminUid || null);
             if (data.collegeAdminUid) {
@@ -50,20 +52,24 @@ function StudentsPageContent() {
               const adminData = adminSnap.exists() ? adminSnap.data() : {};
               setCollegeShort(adminData.collegeShort ?? null);
               setMaxStudents(adminData.maxStudents ?? null);
+              setCollegeStudentDefaultPassword(adminData.collegeStudentDefaultPassword ?? null);
             } else {
               setCollegeShort(null);
               setMaxStudents(null);
+              setCollegeStudentDefaultPassword(null);
             }
           }
         } else {
           setCollegeScopeUid(null);
           setCollegeShort(null);
           setMaxStudents(null);
+          setCollegeStudentDefaultPassword(null);
         }
       } catch {
         setCollegeScopeUid(null);
         setCollegeShort(null);
         setMaxStudents(null);
+        setCollegeStudentDefaultPassword(null);
       }
     });
   }, []);
@@ -194,6 +200,7 @@ function StudentsPageContent() {
         loading={loading}
         onRefresh={fetchStudents}
         collegeCode={collegeShort ?? "_"}
+        defaultPasswordDisplay={collegeStudentDefaultPassword}
       />
     </div>
   );
