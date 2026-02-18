@@ -958,9 +958,24 @@ function QuestionSection({
   };
 
   const subjectList = [...new Set(questions.map((q) => (q.subject || "").trim()).filter(Boolean))].sort();
-  const filteredQuestions = subjectFilter
-    ? questions.filter((q) => (q.subject || "").trim() === subjectFilter)
-    : questions;
+  const DUPLICATES_FILTER = "__duplicates__";
+  const subjectAndTextToIds = new Map();
+  questions.forEach((q) => {
+    const subject = (q.subject || "").trim().toLowerCase();
+    const text = (q.text || "").trim().toLowerCase();
+    if (!text) return;
+    const key = `${subject}\n${text}`;
+    if (!subjectAndTextToIds.has(key)) subjectAndTextToIds.set(key, []);
+    subjectAndTextToIds.get(key).push(q.id);
+  });
+  const duplicateQuestionIds = new Set(
+    [...subjectAndTextToIds.values()].filter((ids) => ids.length > 1).flat()
+  );
+  const filteredQuestions = !subjectFilter
+    ? questions
+    : subjectFilter === DUPLICATES_FILTER
+      ? questions.filter((q) => duplicateQuestionIds.has(q.id))
+      : questions.filter((q) => (q.subject || "").trim() === subjectFilter);
 
   return (
     <div className="bg-white p-6 rounded-xl shadow md:col-span-3">
@@ -1009,9 +1024,12 @@ function QuestionSection({
           id="subject-filter"
           value={subjectFilter}
           onChange={(e) => setSubjectFilter(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[140px]"
+          className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
         >
           <option value="">All subjects</option>
+          <option value={DUPLICATES_FILTER}>
+            Duplicate questions only ({duplicateQuestionIds.size})
+          </option>
           {subjectList.map((sub) => (
             <option key={sub} value={sub}>
               {sub}
@@ -1225,7 +1243,9 @@ function QuestionSection({
 
       {filteredQuestions.length === 0 && questions.length > 0 && (
         <p className="text-gray-500 py-6 text-center">
-          No questions match the selected subject. Choose &quot;All subjects&quot; or another subject.
+          {subjectFilter === DUPLICATES_FILTER
+            ? "No duplicate questions found. Each question has unique text."
+            : "No questions match the selected subject. Choose \"All subjects\" or another subject."}
         </p>
       )}
 
