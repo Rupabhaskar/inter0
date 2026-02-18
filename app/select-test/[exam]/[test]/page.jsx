@@ -4,6 +4,7 @@ import { use, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { collection, addDoc } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
@@ -84,16 +85,18 @@ export default function ExamTestPage({ params }) {
   });
 
   /* ================= LOAD TEST (server cache API + ID token) ================= */
+  /* Wait for auth so refresh shows Loading... then Start button instead of blank */
   useEffect(() => {
-    const load = async () => {
-      if (!testId) {
-        setLoading(false);
-        router.push("/select-test");
-        return;
-      }
-      const user = auth.currentUser;
+    if (!testId) {
+      setLoading(false);
+      router.push("/select-test");
+      return;
+    }
+
+    const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user?.uid) {
         setLoading(false);
+        router.push("/select-test");
         return;
       }
       try {
@@ -148,9 +151,9 @@ export default function ExamTestPage({ params }) {
       } finally {
         setLoading(false);
       }
-    };
+    });
 
-    load();
+    return () => unsub();
   }, [testId, router]);
 
   /* ================= TIMER ================= */

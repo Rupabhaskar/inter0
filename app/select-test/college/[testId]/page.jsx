@@ -14,6 +14,7 @@ import {
   limit,
   addDoc,
 } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
 import { questionDb } from "@/lib/firebaseQuestionDb";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -91,7 +92,14 @@ export default function CollegeTestPage() {
   const [studentClass, setStudentClass] = useState(""); // course/class from student doc
 
   /* ================= LOAD TEST (API with Firestore fallback when Question DB not configured) ================= */
+  /* Wait for auth on refresh so we show Loading then Start button instead of blank */
   useEffect(() => {
+    if (!testId) {
+      setLoading(false);
+      router.push("/select-test/college");
+      return;
+    }
+
     const applyTestData = (questionsData, testData, collegeCodeVal, name, cls) => {
       setTest(testData);
       setQuestions(questionsData);
@@ -132,8 +140,7 @@ export default function CollegeTestPage() {
       }
     };
 
-    const loadFromFirestore = async () => {
-      const uid = auth.currentUser?.uid;
+    const loadFromFirestore = async (uid) => {
       if (!uid) return;
       const idsGroup = collectionGroup(db, "ids");
       const studentSnap = await getDocs(query(idsGroup, where("uid", "==", uid), limit(1)));
@@ -158,10 +165,10 @@ export default function CollegeTestPage() {
       applyTestData(questionsData, testSnap.data(), collegeCodeVal, name, cls);
     };
 
-    const load = async () => {
-      const user = auth.currentUser;
+    const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user?.uid) {
         setLoading(false);
+        router.push("/select-test/college");
         return;
       }
       try {
@@ -190,7 +197,7 @@ export default function CollegeTestPage() {
         const err = await res.json().catch(() => ({}));
         if (res.status === 503 && (err.error || "").toLowerCase().includes("question db")) {
           try {
-            await loadFromFirestore();
+            await loadFromFirestore(user.uid);
           } catch (e) {
             console.error(e);
             setTest(null);
@@ -206,10 +213,10 @@ export default function CollegeTestPage() {
       } finally {
         setLoading(false);
       }
-    };
+    });
 
-    load();
-  }, [testId]);
+    return () => unsub();
+  }, [testId, router]);
 
   /* ================= TIMER ================= */
   useEffect(() => {

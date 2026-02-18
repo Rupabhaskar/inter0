@@ -43,10 +43,24 @@ export default function Page() {
   const [testName, setTestName] = useState("");
   const [duration, setDuration] = useState("");
   const [testType, setTestType] = useState("");
+  const [showTestTypeSuggestions, setShowTestTypeSuggestions] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [testTypeFilter, setTestTypeFilter] = useState(""); // "" = All, "jee", "eamcet"
+  const [testNameSearch, setTestNameSearch] = useState("");
+  const [testsPage, setTestsPage] = useState(0);
+
+  const TESTS_PAGE_SIZE = 5;
+
+  // Default test type options (shown when user types; e.g. "jee" → JEE Mains, JEE Advance, etc.)
+  const DEFAULT_TEST_TYPES = ["JEE Mains", "JEE Advance", "EAMCET"];
+  const existingTestTypes = [...new Set(tests.map((t) => t.testType).filter(Boolean))];
+  const allTestTypeOptions = [...new Set([...DEFAULT_TEST_TYPES, ...existingTestTypes])];
+  const testTypeSuggestions = testType
+    ? allTestTypeOptions.filter((opt) => opt.toLowerCase().includes(testType.toLowerCase()))
+    : [];
 
   const emptyQuestion = {
     text: "",
@@ -90,6 +104,38 @@ export default function Page() {
       behavior: "smooth",
     });
   };
+
+  /* ================= FILTER TESTS BY TYPE ================= */
+  const typeFilteredTests = testTypeFilter
+    ? tests.filter((t) => {
+        const type = (t.testType || "").toLowerCase();
+        if (testTypeFilter === "jee") return type.includes("jee");
+        if (testTypeFilter === "eamcet") return type.includes("eamcet");
+        return true;
+      })
+    : tests;
+
+  /* ================= FILTER BY TEST NAME (SEARCH) ================= */
+  const filteredTests = testNameSearch.trim()
+    ? typeFilteredTests.filter((t) =>
+        (t.name || "").toLowerCase().includes(testNameSearch.trim().toLowerCase())
+      )
+    : typeFilteredTests;
+
+  /* ================= SORT ALPHABETICALLY + PAGINATE ================= */
+  const sortedTests = [...filteredTests].sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "", undefined, { numeric: true })
+  );
+  const totalPages = Math.max(1, Math.ceil(sortedTests.length / TESTS_PAGE_SIZE));
+  const currentPage = Math.min(testsPage, totalPages - 1);
+  const paginatedTests = sortedTests.slice(
+    currentPage * TESTS_PAGE_SIZE,
+    (currentPage + 1) * TESTS_PAGE_SIZE
+  );
+
+  useEffect(() => {
+    setTestsPage(0);
+  }, [testTypeFilter, testNameSearch]);
 
   /* ================= TEST CRUD ================= */
 
@@ -365,12 +411,15 @@ export default function Page() {
     const questionsToAdd = [];
     for (const row of rows) {
       const text = row["Question"];
-      const options = [
+      const rawOptions = [
         row["Option A"],
         row["Option B"],
         row["Option C"],
         row["Option D"],
-      ].filter(Boolean);
+      ];
+      const options = rawOptions.filter(
+        (x) => x !== undefined && x !== null && (x === 0 || x === "0" || String(x).trim() !== "")
+      );
 
       if (!text || options.length < 2) continue;
 
@@ -417,12 +466,37 @@ export default function Page() {
             value={testName}
             onChange={(e) => setTestName(e.target.value)}
           />
-          <input
-            className="w-full p-2 mb-3 border rounded"
-            placeholder="JEE Mains or EAMCET"
-            value={testType}
-            onChange={(e) => setTestType(e.target.value)}
-          />
+          <div className="relative mb-3">
+            <input
+              className="w-full p-2 border rounded"
+              placeholder="Test type (e.g. JEE, EAMCET)"
+              value={testType}
+              onChange={(e) => {
+                setTestType(e.target.value);
+                setShowTestTypeSuggestions(true);
+              }}
+              onFocus={() => setShowTestTypeSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowTestTypeSuggestions(false), 200)}
+              autoComplete="off"
+            />
+            {showTestTypeSuggestions && testTypeSuggestions.length > 0 && (
+              <ul className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded shadow-lg max-h-48 overflow-auto">
+                {testTypeSuggestions.map((opt) => (
+                  <li
+                    key={opt}
+                    className="px-3 py-2 cursor-pointer hover:bg-blue-50 text-gray-800 border-b border-gray-100 last:border-0"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setTestType(opt);
+                      setShowTestTypeSuggestions(false);
+                    }}
+                  >
+                    {opt}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <input
             className="w-full p-2 mb-3 border rounded"
             type="number"
@@ -440,9 +514,68 @@ export default function Page() {
 
         {/* TEST LIST */}
         <div className="bg-white p-6 rounded-xl shadow md:col-span-2">
-          <h2 className="text-xl font-bold mb-4">Tests</h2>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <h2 className="text-xl font-bold">Tests</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+              <input
+                type="text"
+                placeholder="Search by test name..."
+                value={testNameSearch}
+                onChange={(e) => setTestNameSearch(e.target.value)}
+                className="w-full sm:w-56 px-3 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <div className="flex gap-2 flex-wrap">
+                <span className="text-sm text-gray-500 self-center">Filter:</span>
+              <button
+                type="button"
+                onClick={() => setTestTypeFilter("")}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                  !testTypeFilter ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setTestTypeFilter("jee")}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                  testTypeFilter === "jee" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                JEE
+              </button>
+              <button
+                type="button"
+                onClick={() => setTestTypeFilter("eamcet")}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                  testTypeFilter === "eamcet" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                }`}
+              >
+                EAMCET
+              </button>
+              </div>
+            </div>
+          </div>
+          <p className="text-sm text-gray-500 mb-3">
+            Showing {paginatedTests.length} of {sortedTests.length} test{sortedTests.length !== 1 ? "s" : ""}
+            {sortedTests.length > TESTS_PAGE_SIZE && (
+              <span className="ml-1">
+                (page {currentPage + 1} of {totalPages})
+              </span>
+            )}
+          </p>
 
-          {tests.map((t) => {
+          {sortedTests.length === 0 ? (
+            <p className="text-gray-500 py-6 text-center">
+              {tests.length === 0
+                ? "No tests yet. Create one above."
+                : testNameSearch.trim()
+                  ? `No tests match "${testNameSearch.trim()}". Try a different search.`
+                  : `No tests match "${testTypeFilter === "jee" ? "JEE" : "EAMCET"}". Try another filter.`}
+            </p>
+          ) : null}
+
+          {paginatedTests.map((t) => {
             const isExpanded = expandedTests.has(t.id);
             const isSelected = selectedTest?.id === t.id;
 
@@ -496,7 +629,11 @@ export default function Page() {
                           <span className="sm:hidden">✏️</span>
                         </button>
                         <button
-                          onClick={() => deleteTest(t.id)}
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete the test "${t.name}"? This cannot be undone.`)) {
+                              deleteTest(t.id);
+                            }
+                          }}
                           className="bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
                         >
                           <span className="hidden sm:inline">Delete</span>
@@ -509,6 +646,30 @@ export default function Page() {
               </div>
             );
           })}
+
+          {sortedTests.length > TESTS_PAGE_SIZE && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setTestsPage((p) => Math.max(0, p - 1))}
+                disabled={currentPage === 0}
+                className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-sm text-gray-600">
+                Page {currentPage + 1} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setTestsPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={currentPage >= totalPages - 1}
+                className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
 
         {/* QUESTIONS */}
@@ -575,6 +736,7 @@ function QuestionSection({
 }) {
   const [questions, setQuestions] = useState([]);
   const [showFormat, setShowFormat] = useState(false);
+  const [subjectFilter, setSubjectFilter] = useState("");
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -795,9 +957,14 @@ function QuestionSection({
     });
   };
 
+  const subjectList = [...new Set(questions.map((q) => (q.subject || "").trim()).filter(Boolean))].sort();
+  const filteredQuestions = subjectFilter
+    ? questions.filter((q) => (q.subject || "").trim() === subjectFilter)
+    : questions;
+
   return (
     <div className="bg-white p-6 rounded-xl shadow md:col-span-3">
-      <div className="flex justify-between mb-4">
+      <div className="flex flex-wrap justify-between gap-4 mb-4">
         <h2 className="text-xl font-bold">Questions – {test.name}</h2>
 
         <div className="flex gap-2">
@@ -831,6 +998,29 @@ function QuestionSection({
             + Add Question
           </button>
         </div>
+      </div>
+
+      {/* Subject filter */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <label htmlFor="subject-filter" className="text-sm font-medium text-gray-700">
+          Subject:
+        </label>
+        <select
+          id="subject-filter"
+          value={subjectFilter}
+          onChange={(e) => setSubjectFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[140px]"
+        >
+          <option value="">All subjects</option>
+          {subjectList.map((sub) => (
+            <option key={sub} value={sub}>
+              {sub}
+            </option>
+          ))}
+        </select>
+        <span className="text-sm text-gray-500">
+          Showing {filteredQuestions.length} of {questions.length} question{questions.length !== 1 ? "s" : ""}
+        </span>
       </div>
 
       {/* Excel Format Guide */}
@@ -894,7 +1084,7 @@ function QuestionSection({
         </div>
       )}
 
-      {showForm && (
+      {showForm && !editingQuestion && (
         <div className="border p-4 rounded mb-6 bg-gray-50">
           <div className="mb-3">
             <input
@@ -1033,11 +1223,18 @@ function QuestionSection({
         </div>
       )}
 
-      {questions.map((q) => (
-        <div key={q.id} className="border p-4 rounded mb-2">
-          <div className="flex justify-between">
-            <div className="flex-1">
-              <p className="font-semibold">{q.text}</p>
+      {filteredQuestions.length === 0 && questions.length > 0 && (
+        <p className="text-gray-500 py-6 text-center">
+          No questions match the selected subject. Choose &quot;All subjects&quot; or another subject.
+        </p>
+      )}
+
+      {filteredQuestions.map((q) => (
+        <div key={q.id} className="mb-2">
+          <div className="border p-4 rounded mb-2 bg-white">
+            <div className="flex justify-between">
+              <div className="flex-1">
+                <p className="font-semibold">{q.text}</p>
               {q.imageUrl && (
                 <OptimizedImage
                   src={q.imageUrl}
@@ -1118,6 +1315,83 @@ function QuestionSection({
               </button>
             </div>
           </div>
+          </div>
+
+          {/* Edit form: show directly below this question when Edit is clicked */}
+          {editingQuestion?.id === q.id && (
+            <div className="border p-4 rounded mb-6 bg-gray-50 mt-2">
+              <div className="flex justify-between items-center mb-4">
+                <span className="font-semibold text-gray-800">Edit question</span>
+                <button
+                  type="button"
+                  onClick={() => { setShowForm(false); setEditingQuestion(null); }}
+                  className="px-3 py-1.5 rounded text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="mb-3">
+                <input
+                  className="w-full p-2 border mb-3 rounded"
+                  placeholder="Question"
+                  value={qData.text}
+                  onChange={(e) =>
+                    setQData({ ...qData, text: e.target.value })
+                  }
+                />
+                <input
+                  className="w-full p-2 border mb-3 rounded"
+                  placeholder="Subject/Section (e.g., Physics, Chemistry, Math)"
+                  value={qData.subject || ""}
+                  onChange={(e) =>
+                    setQData({ ...qData, subject: e.target.value })
+                  }
+                />
+                <div className="mb-3">
+                  <label className="block text-sm font-medium mb-1">Question Image (Optional)</label>
+                  {qData.imageUrl ? (
+                    <div className="relative inline-block">
+                      <OptimizedImage src={qData.imageUrl} alt="Question" className="max-w-xs max-h-48 rounded border object-contain" width={320} height={192} />
+                      <button onClick={removeQuestionImage} className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">✕</button>
+                    </div>
+                  ) : (
+                    <label className="inline-block bg-gray-200 text-gray-700 px-4 py-2 rounded cursor-pointer hover:bg-gray-300">
+                      Upload Image
+                      <input type="file" accept="image/*" onChange={handleQuestionImageUpload} className="hidden" />
+                    </label>
+                  )}
+                </div>
+              </div>
+              {qData.options.map((o, i) => (
+                <div key={i} className="border p-3 rounded mb-2 bg-white">
+                  <div className="flex gap-2 mb-2 items-center">
+                    <input type="checkbox" checked={qData.correctAnswers.includes(i)} onChange={() => toggleCorrect(i)} />
+                    <input className="flex-1 p-2 border rounded" value={o} placeholder={`Option ${i + 1}`} onChange={(e) => updateOption(i, e.target.value)} />
+                    <button onClick={() => deleteOption(i)} className="bg-red-500 text-white px-2 py-1 rounded">✕</button>
+                  </div>
+                  <div className="ml-6 mt-2">
+                    <label className="block text-sm font-medium mb-1">Option {i + 1} Image (Optional)</label>
+                    {(qData.optionImages && qData.optionImages[i]) ? (
+                      <div className="relative inline-block">
+                        <OptimizedImage src={qData.optionImages[i]} alt={`Option ${i + 1}`} className="max-w-xs max-h-32 rounded border object-contain" width={320} height={128} />
+                        <button onClick={() => removeOptionImage(i)} className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">✕</button>
+                      </div>
+                    ) : (
+                      <label className="inline-block bg-gray-200 text-gray-700 px-3 py-1 rounded cursor-pointer hover:bg-gray-300 text-sm">
+                        Upload Image
+                        <input type="file" accept="image/*" onChange={(e) => handleOptionImageUpload(e, i)} className="hidden" />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <button onClick={addOption} className="bg-gray-700 text-white px-3 py-1 rounded">+ Add Option</button>
+              <div className="mt-4 flex gap-2">
+                <button onClick={saveQuestion} className="bg-green-600 text-white px-4 py-2 rounded">Save</button>
+                <button type="button" onClick={() => { setShowForm(false); setEditingQuestion(null); }} className="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500">Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
     </div>

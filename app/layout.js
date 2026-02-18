@@ -2,6 +2,7 @@ import "./globals.css";
 import { Orbitron, Inter } from "next/font/google";
 import Navbar from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
+import SuppressNextPathConsoleError from "@/components/SuppressNextPathConsoleError";
 import {
   defaultMetadata,
   getOrganizationSchema,
@@ -47,6 +48,7 @@ export default function RootLayout({ children }) {
         <JsonLd data={organizationSchema} />
         <JsonLd data={websiteSchema} />
         <AuthProvider>
+          <SuppressNextPathConsoleError />
           <Navbar />
           <main className="pt-6">{children}</main>
         </AuthProvider>
