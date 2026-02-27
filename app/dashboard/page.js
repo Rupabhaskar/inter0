@@ -24,7 +24,7 @@ export default function Dashboard() {
 
     // Only fetch and display dashboard results for students
     if (role !== "student") {
-      setLoading(false);
+      queueMicrotask(() => setLoading(false));
       return;
     }
 

@@ -898,6 +898,22 @@ function QuestionSection({
     e.target.value = "";
   };
 
+  const handleQuestionImagePaste = async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    let file = null;
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        file = item.getAsFile();
+        break;
+      }
+    }
+    if (!file) return;
+    e.preventDefault();
+    await handleQuestionImageUpload({ target: { files: [file], value: "" } });
+  };
+
   const handleOptionImageUpload = async (e, index) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -962,6 +978,22 @@ function QuestionSection({
       });
     }
     e.target.value = "";
+  };
+
+  const handleOptionImagePaste = async (e, index) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    let file = null;
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        file = item.getAsFile();
+        break;
+      }
+    }
+    if (!file) return;
+    e.preventDefault();
+    await handleOptionImageUpload({ target: { files: [file], value: "" } }, index);
   };
 
   const removeQuestionImage = async () => {
@@ -1130,7 +1162,10 @@ function QuestionSection({
       {/* Add-question form: only at top when adding (not editing) */}
       {showForm && !editingQuestion && (
         <div className="border p-4 rounded mb-6 bg-gray-50">
-          <div className="mb-3">
+            <div
+              className="mb-3"
+              onPaste={handleQuestionImagePaste}
+            >
             <input
               className="w-full p-2 border mb-3 rounded"
               placeholder="Question"
@@ -1149,7 +1184,10 @@ function QuestionSection({
               }
             />
             
-            <div className="mb-3">
+            <div
+              className="mb-3"
+              onPaste={handleQuestionImagePaste}
+            >
               <label className="block text-sm font-medium mb-1">
                 Question Image (Optional)
               </label>
@@ -1205,7 +1243,10 @@ function QuestionSection({
                 </button>
               </div>
               
-              <div className="ml-6 mt-2">
+              <div
+                className="ml-6 mt-2"
+                onPaste={(e) => handleOptionImagePaste(e, i)}
+              >
                 <label className="block text-sm font-medium mb-1">
                   Option {i + 1} Image (Optional)
                 </label>
@@ -1377,7 +1418,10 @@ function QuestionSection({
                   value={qData.subject || ""}
                   onChange={(e) => setQData({ ...qData, subject: e.target.value })}
                 />
-                <div className="mb-3">
+                <div
+                  className="mb-3"
+                  onPaste={handleQuestionImagePaste}
+                >
                   <label className="block text-sm font-medium mb-1">Question Image (Optional)</label>
                   {qData.imageUrl ? (
                     <div className="relative inline-block">
@@ -1399,7 +1443,10 @@ function QuestionSection({
                     <input className="flex-1 p-2 border rounded" value={o} placeholder={`Option ${i + 1}`} onChange={(e) => updateOption(i, e.target.value)} />
                     <button onClick={() => deleteOption(i)} className="bg-red-500 text-white px-2 py-1 rounded">✕</button>
                   </div>
-                  <div className="ml-6 mt-2">
+              <div
+                className="ml-6 mt-2"
+                onPaste={(e) => handleOptionImagePaste(e, i)}
+              >
                     <label className="block text-sm font-medium mb-1">Option {i + 1} Image (Optional)</label>
                     {(qData.optionImages && qData.optionImages[i]) ? (
                       <div className="relative inline-block">

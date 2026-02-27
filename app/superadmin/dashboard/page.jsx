@@ -356,11 +356,14 @@ export default function SuperAdminDashboardPage() {
                     <td className="p-3">{index + 1}</td>
                     <td className="p-3">
                       {user.logoUrl ? (
-                        <img
-                          src={user.logoUrl}
-                          alt=""
-                          className="w-10 h-10 rounded object-cover border"
-                        />
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={user.logoUrl}
+                            alt=""
+                            className="w-10 h-10 rounded object-cover border"
+                          />
+                        </>
                       ) : (
                         <span className="text-gray-400 text-xs">—</span>
                       )}
@@ -469,6 +472,7 @@ export default function SuperAdminDashboardPage() {
                 />
                 {logoPreview && (
                   <div className="mt-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={logoPreview}
                       alt="Logo preview"
@@ -625,6 +629,7 @@ export default function SuperAdminDashboardPage() {
                 </label>
                 {(editLogoPreview || editLogoUrl) && (
                   <div className="mb-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={editLogoPreview || editLogoUrl}
                       alt="Logo"

@@ -128,13 +128,17 @@ export default function DashboardLayout({ children }) {
   // Resolve college logo + name for sidebar (admin = own doc; collegeuser = admin's doc)
   useEffect(() => {
     if (!userData) {
-      setCollegeLogoUrl(null);
-      setCollegeName(null);
+      queueMicrotask(() => {
+        setCollegeLogoUrl(null);
+        setCollegeName(null);
+      });
       return;
     }
     if (userData.role === "collegeAdmin") {
-      setCollegeLogoUrl(userData.logoUrl || null);
-      setCollegeName(userData.collegeName || userData.collegeShort || null);
+      queueMicrotask(() => {
+        setCollegeLogoUrl(userData.logoUrl || null);
+        setCollegeName(userData.collegeName || userData.collegeShort || null);
+      });
       return;
     }
     if (userData.role === "collegeuser" && userData.collegeAdminUid) {
@@ -142,13 +146,18 @@ export default function DashboardLayout({ children }) {
       getDoc(doc(db, "users", userData.collegeAdminUid)).then((snap) => {
         if (cancelled) return;
         const data = snap.exists() ? snap.data() : {};
-        setCollegeLogoUrl(data.logoUrl || null);
-        setCollegeName(data.collegeName || data.collegeShort || null);
+        queueMicrotask(() => {
+          if (cancelled) return;
+          setCollegeLogoUrl(data.logoUrl || null);
+          setCollegeName(data.collegeName || data.collegeShort || null);
+        });
       });
       return () => { cancelled = true; };
     }
-    setCollegeLogoUrl(null);
-    setCollegeName(null);
+    queueMicrotask(() => {
+      setCollegeLogoUrl(null);
+      setCollegeName(null);
+    });
   }, [userData]);
 
   if (loading) {
@@ -206,11 +215,14 @@ export default function DashboardLayout({ children }) {
                   className="h-full w-full object-contain p-1"
                 />
               ) : (
-                <img
-                  src={collegeLogoUrl}
-                  alt={collegeName || "College logo"}
-                  className="h-full w-full object-contain p-1"
-                />
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={collegeLogoUrl}
+                    alt={collegeName || "College logo"}
+                    className="h-full w-full object-contain p-1"
+                  />
+                </>
               )}
             </div>
           ) : (

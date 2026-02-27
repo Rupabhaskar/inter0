@@ -188,21 +188,24 @@ export default function Navbar() {
                 className="flex items-center justify-center rounded-full w-16 h-16 md:w-20 md:h-20 overflow-hidden border-2 border-white shadow-lg bg-white shrink-0 ring-2 ring-slate-200"
                 title={collegeName || "College partner"}
               >
-                {collegeLogoUrl.includes("cloudinary.com") ? (
-                  <Image
-                    src={collegeLogoUrl}
-                    alt={collegeName || "College logo"}
-                    width={96}
-                    height={96}
-                    className="h-full w-full object-contain p-1.5"
-                  />
-                ) : (
+              {collegeLogoUrl.includes("cloudinary.com") ? (
+                <Image
+                  src={collegeLogoUrl}
+                  alt={collegeName || "College logo"}
+                  width={96}
+                  height={96}
+                  className="h-full w-full object-contain p-1.5"
+                />
+              ) : (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={collegeLogoUrl}
                     alt={collegeName || "College logo"}
                     className="h-full w-full object-contain p-1.5"
                   />
-                )}
+                </>
+              )}
               </div>
             </div>
           ) : (
@@ -271,7 +274,10 @@ export default function Navbar() {
                   {collegeLogoUrl.includes("cloudinary.com") ? (
                     <Image src={collegeLogoUrl} alt="" width={56} height={56} className="h-full w-full object-contain p-1" />
                   ) : (
-                    <img src={collegeLogoUrl} alt="" className="h-full w-full object-contain p-1" />
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={collegeLogoUrl} alt="" className="h-full w-full object-contain p-1" />
+                    </>
                   )}
                 </div>
               )}
