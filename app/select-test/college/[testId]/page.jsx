@@ -848,7 +848,7 @@ export default function CollegeTestPage() {
           {/* Question Text */}
           {filteredQuestions.length > 0 && (
             <>
-              <p className="font-medium text-lg">
+              <p className="font-medium text-lg whitespace-pre-wrap">
                 {current + 1}. {filteredQuestions[current].text || filteredQuestions[current].question}
                 {filteredQuestions[current].subject && (
                   <span className="ml-2 text-sm text-blue-600 font-normal">

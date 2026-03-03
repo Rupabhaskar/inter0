@@ -1153,13 +1153,14 @@ function QuestionSection({
       {showForm && !editingQuestion && (
         <div className="border p-4 rounded mb-6 bg-gray-50">
           <div className="mb-3">
-            <input
-              className="w-full p-2 border mb-3 rounded"
-              placeholder="Question"
+            <textarea
+              className="w-full p-2 border mb-3 rounded min-h-[80px] resize-y"
+              placeholder="Question (press Enter for new line)"
               value={qData.text}
               onChange={(e) =>
                 setQData({ ...qData, text: e.target.value })
               }
+              rows={3}
             />
 
             {/* Subject Selection */}
@@ -1318,7 +1319,7 @@ function QuestionSection({
           <div className="border p-4 rounded mb-2 bg-white">
             <div className="flex justify-between">
               <div className="flex-1">
-                <p className="font-semibold">{q.text}</p>
+                <p className="font-semibold whitespace-pre-wrap">{q.text}</p>
               {q.imageUrl && (
                 <OptimizedImage
                   src={q.imageUrl}
@@ -1415,13 +1416,14 @@ function QuestionSection({
                 </button>
               </div>
               <div className="mb-3">
-                <input
-                  className="w-full p-2 border mb-3 rounded"
-                  placeholder="Question"
+                <textarea
+                  className="w-full p-2 border mb-3 rounded min-h-[80px] resize-y"
+                  placeholder="Question (press Enter for new line)"
                   value={qData.text}
                   onChange={(e) =>
                     setQData({ ...qData, text: e.target.value })
                   }
+                  rows={3}
                 />
                 <input
                   className="w-full p-2 border mb-3 rounded"
