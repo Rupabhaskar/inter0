@@ -58,10 +58,19 @@ export default function CollegeTestsPage() {
         });
         if (res.ok) {
           const data = await res.json();
-          setTests(data.tests || []);
+          const list = data.tests || [];
+          setTests(list);
           setSubmittedTestIds(
             new Set(Array.isArray(data.submittedTestIds) ? data.submittedTestIds : [])
           );
+          // When server has no Question DB or returned empty list, try client-side Firestore
+          if (data.questionDbUnavailable || list.length === 0) {
+            try {
+              await loadFromFirestore();
+            } catch (e) {
+              console.error(e);
+            }
+          }
           return;
         }
         const err = await res.json().catch(() => ({}));

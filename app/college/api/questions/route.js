@@ -114,10 +114,21 @@ export async function GET(req) {
       if (!tests) {
         const adminQuestionDb = getAdminQuestionDb();
         if (!adminQuestionDb) {
-          return NextResponse.json(
-            { error: "Question DB not configured (QUESTION_DB_* env)" },
-            { status: 503 }
-          );
+          // Question DB not configured (QUESTION_DB_* env). Return 200 with empty so client can use Firestore fallback.
+          const resultsRef = adminDb
+            .collection("results")
+            .doc("byCollege")
+            .collection(student.collegeCode);
+          const resultsSnap = await resultsRef.where("uid", "==", uid).get();
+          const submittedTestIds = resultsSnap.empty
+            ? []
+            : resultsSnap.docs.map((d) => d.data().testId).filter(Boolean);
+          return NextResponse.json({
+            tests: [],
+            submittedTestIds,
+            fromCache: false,
+            questionDbUnavailable: true,
+          });
         }
         const colRef = adminQuestionDb.collection(student.collegeCode);
         const snapshot = await colRef.get();

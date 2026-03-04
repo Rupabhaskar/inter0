@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -11,6 +11,8 @@ export default function ExamPage({ params }) {
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const router = useRouter();
 
   useEffect(() => {
     const load = async () => {
@@ -44,45 +46,56 @@ export default function ExamPage({ params }) {
 
   const examLabel = exam ? exam.replace(/-/g, " ").toUpperCase() : "";
 
+  if (loading) {
+    return (
+      <div className="p-10 text-center text-gray-500">
+        Loading tests...
+      </div>
+    );
+  }
+
   return (
     <ProtectedRoute>
       <div className="max-w-6xl mx-auto p-6">
         <h2 className="text-2xl font-bold mb-2">{examLabel}</h2>
-        <p className="text-slate-500 mb-6">Select a test</p>
-
-        {loading && (
-          <div className="text-center py-10 text-gray-500">Loading tests...</div>
-        )}
+        <p className="text-slate-500 mb-6">
+          Select a test to start
+        </p>
 
         {error && (
-          <div className="text-center py-6 text-red-500 font-medium">{error}</div>
+          <p className="text-red-500 font-medium mb-4">{error}</p>
         )}
 
-        {!loading && !error && tests.length === 0 && (
-          <div className="text-center py-10 text-gray-500">
-            No tests available for this exam type.
-          </div>
+        {!error && tests.length === 0 && (
+          <p className="text-red-500">No tests available for this exam type.</p>
         )}
 
-        {!loading && !error && tests.length > 0 && (
+        {!error && tests.length > 0 && (
           <div className="grid md:grid-cols-3 gap-6">
             {tests.map((test) => (
-              <Link
+              <div
                 key={test.id}
-                href={`/select-test/${exam}/${test.id}`}
-                className="p-6 bg-white border rounded-lg hover:shadow transition"
+                onClick={() => router.push(`/select-test/${exam}/${test.id}`)}
+                className="p-6 border rounded-lg transition bg-white cursor-pointer hover:shadow-lg hover:border-blue-300"
               >
-                <h3 className="font-semibold text-lg">{test.name}</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  {test.testType && (
-                    <span className="text-blue-600">{test.testType}</span>
-                  )}
-                  {test.duration != null && (
-                    <span> • {test.duration} mins</span>
-                  )}
+                <h3 className="font-semibold text-lg">
+                  {test.name || "Untitled Test"}
+                </h3>
+
+                <p className="text-sm text-slate-500 mt-2">
+                  Duration: {test.duration ?? "—"} minutes
                 </p>
-                <p className="text-xs text-green-600 mt-3">Start Test</p>
-              </Link>
+
+                {test.testType && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    {test.testType}
+                  </p>
+                )}
+
+                <p className="text-xs text-green-600 mt-3">
+                  Click to start
+                </p>
+              </div>
             ))}
           </div>
         )}

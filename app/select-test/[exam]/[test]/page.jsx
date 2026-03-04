@@ -3,7 +3,7 @@
 import { use, useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, limit } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -60,6 +60,121 @@ function CloudinaryImage({ src, alt, type = "question", priority = false }) {
 
 const TESTS_COLLECTION = "superadminTests";
 
+/* ================= INSTRUCTION TRANSLATIONS (English, Hindi, Telugu) ================= */
+const INSTRUCTION_TRANSLATIONS = {
+  en: {
+    viewIn: "View In:",
+    pleaseRead: "Please read the following instructions carefully",
+    generalInstructions: "General Instructions:",
+    durationLine: (mins) => `Total of ${mins} minutes duration will be given to attempt all the questions.`,
+    timerLine: "The countdown timer is displayed at the top right corner. The exam will end automatically when the time runs out.",
+    questionPalette: "Question Palette:",
+    notVisited: "You have not visited the question yet.",
+    answered: "You have answered the question.",
+    notAnswered: "You have not answered the question.",
+    markedNotAnswered: "You have NOT answered the question but have marked the question for review.",
+    markedAnswered: "You have answered the question but marked it for review.",
+    markedNote: "Note:",
+    markedReminder: "Marked for Review is a reminder.",
+    markedWarning: "If an answer is selected for a question that is Marked for Review, the answer will be considered in the final evaluation.",
+    navigatingTo: "Navigating to a question :",
+    nav1: "Click on a question number in the palette to go to that question (this does not save your answer).",
+    nav2: "Click Save and Next to save your answer and move to the next question.",
+    nav3: "Click Mark for Review and Next to save your answer (if any), mark the question for review, and move to the next question.",
+    nav4: "You can view the entire paper using the Question Paper / palette.",
+    answering: "Answering questions :",
+    ans1: "To select an answer, click on the option button.",
+    ans2: "To change an answer, click another option button.",
+    ans3: "To save your answer you must click Save & Next or move to another question.",
+    next: "Next >>",
+    photo: "Photo",
+    otherWarnings: "Other Important Instructions / Warnings",
+    warn1: "The Question paper displayed is for practice purposes only. Under no circumstances should this be presumed as a main paper.",
+    warn2: "This site has been optimized for the latest version of Google Chrome. Other browsers may not work properly.",
+    warn3: "While writing the exam, do not move the mouse outside of the window. If you do, a countdown may appear. If you fail to click within the time, your exam may be submitted automatically.",
+    warn4: "While writing the exam, if you close the exam window intentionally, your exam will be submitted without any further confirmation.",
+    notice: "NOTICE",
+    noticeText: "If the system is left idle for 5 minutes while attempting the exam, it will be submitted automatically.",
+    previous: "<< Previous",
+    checkboxText: "I have read and understood the instructions. All computer hardware allotted to me is in proper working condition. I agree that in case of not adhering to the instructions, I will be disqualified from giving the exam.",
+    readyToBegin: "I am ready to begin",
+  },
+  hi: {
+    viewIn: "भाषा देखें:",
+    pleaseRead: "कृपया निम्नलिखित निर्देशों को ध्यान से पढ़ें",
+    generalInstructions: "सामान्य निर्देश:",
+    durationLine: (mins) => `सभी प्रश्नों के लिए कुल ${mins} मिनट का समय दिया जाएगा।`,
+    timerLine: "उलटी गिनती टाइमर ऊपर दाएं कोने में दिखाया जाता है। समय समाप्त होने पर परीक्षा स्वचालित रूप से समाप्त हो जाएगी।",
+    questionPalette: "प्रश्न पैलेट:",
+    notVisited: "आपने अभी तक इस प्रश्न पर जाए नहीं है।",
+    answered: "आपने इस प्रश्न का उत्तर दे दिया है।",
+    notAnswered: "आपने इस प्रश्न का उत्तर नहीं दिया है।",
+    markedNotAnswered: "आपने प्रश्न का उत्तर नहीं दिया है लेकिन समीक्षा के लिए चिह्नित किया है।",
+    markedAnswered: "आपने प्रश्न का उत्तर दिया है और समीक्षा के लिए चिह्नित किया है।",
+    markedNote: "नोट:",
+    markedReminder: "समीक्षा के लिए चिह्नित एक अनुस्मारक है।",
+    markedWarning: "यदि समीक्षा के लिए चिह्नित प्रश्न के लिए कोई उत्तर चुना जाता है, तो उस उत्तर को अंतिम मूल्यांकन में माना जाएगा।",
+    navigatingTo: "प्रश्न पर जाना :",
+    nav1: "उस प्रश्न पर जाने के लिए पैलेट में प्रश्न संख्या पर क्लिक करें (यह आपका उत्तर सहेजता नहीं है)।",
+    nav2: "अपना उत्तर सहेजने और अगले प्रश्न पर जाने के लिए सहेजें और अगला पर क्लिक करें।",
+    nav3: "उत्तर सहेजने, समीक्षा के लिए चिह्नित करने और अगले पर जाने के लिए समीक्षा के लिए चिह्नित करें और अगला पर क्लिक करें।",
+    nav4: "आप प्रश्न पत्र / पैलेट का उपयोग करके पूरा पेपर देख सकते हैं।",
+    answering: "प्रश्नों का उत्तर देना :",
+    ans1: "उत्तर चुनने के लिए विकल्प बटन पर क्लिक करें।",
+    ans2: "उत्तर बदलने के लिए दूसरे विकल्प बटन पर क्लिक करें।",
+    ans3: "अपना उत्तर सहेजने के लिए आपको सहेजें और अगला पर क्लिक करना होगा या किसी अन्य प्रश्न पर जाना होगा।",
+    next: "अगला >>",
+    photo: "फोटो",
+    otherWarnings: "अन्य महत्वपूर्ण निर्देश / चेतावनियाँ",
+    warn1: "दिखाया गया प्रश्न पत्र केवल अभ्यास के उद्देश्य के लिए है। किसी भी परिस्थिति में इसे मुख्य पेपर नहीं माना जाना चाहिए।",
+    warn2: "यह साइट Google Chrome के नवीनतम संस्करण के लिए अनुकूलित है। अन्य ब्राउज़र ठीक से काम नहीं कर सकते।",
+    warn3: "परीक्षा लिखते समय माउस को विंडो से बाहर न ले जाएं। ऐसा करने पर उलटी गिनती दिख सकती है। समय के भीतर क्लिक न करने पर आपकी परीक्षा स्वचालित रूप से जमा हो सकती है।",
+    warn4: "परीक्षा लिखते समय यदि आप जानबूझकर परीक्षा विंडो बंद करते हैं, तो आपकी परीक्षा बिना किसी और पुष्टि के जमा हो जाएगी।",
+    notice: "सूचना",
+    noticeText: "यदि परीक्षा देते समय सिस्टम 5 मिनट के लिए निष्क्रिय रहता है, तो यह स्वचालित रूप से जमा हो जाएगा।",
+    previous: "<< पिछला",
+    checkboxText: "मैंने निर्देश पढ़ और समझ लिए हैं। मुझे आवंटित सभी कंप्यूटर हार्डवेयर ठीक से काम कर रहे हैं। मैं सहमत हूं कि निर्देशों का पालन न करने की स्थिति में मुझे परीक्षा देने से अयोग्य ठहराया जाएगा।",
+    readyToBegin: "मैं शुरू करने के लिए तैयार हूं",
+  },
+  te: {
+    viewIn: "భాషలో వీక్షించండి:",
+    pleaseRead: "దయచేసి క్రింది సూచనలను జాగ్రత్తగా చదవండి",
+    generalInstructions: "సాధారణ సూచనలు:",
+    durationLine: (mins) => `అన్ని ప్రశ్నలకు ప్రయత్నించడానికి మొత్తం ${mins} నిమిషాల సమయం ఇవ్వబడుతుంది.`,
+    timerLine: "కౌంట్డౌన్ టైమర్ ఎగువ కుడి మూలలో ప్రదర్శించబడుతుంది. సమయం ముగిసినప్పుడు పరీక్ష స్వయంచాలకంగా ముగుస్తుంది.",
+    questionPalette: "ప్రశ్న ప్యాలెట్:",
+    notVisited: "మీరు ఇంకా ఈ ప్రశ్నను సందర్శించలేదు.",
+    answered: "మీరు ఈ ప్రశ్నకు సమాధానం ఇచ్చారు.",
+    notAnswered: "మీరు ఈ ప్రశ్నకు సమాధానం ఇవ్వలేదు.",
+    markedNotAnswered: "మీరు ప్రశ్నకు సమాధానం ఇవ్వలేదు కానీ సమీక్ష కోసం గుర్తించారు.",
+    markedAnswered: "మీరు ప్రశ్నకు సమాధానం ఇచ్చారు మరియు సమీక్ష కోసం గుర్తించారు.",
+    markedNote: "గమనిక:",
+    markedReminder: "సమీక్ష కోసం గుర్తించబడింది ఒక రిమైండర్.",
+    markedWarning: "సమీక్ష కోసం గుర్తించబడిన ప్రశ్నకు సమాధానం ఎంచుకుంటే, ఆ సమాధానం చివరి మూల్యాంకనంలో పరిగణించబడుతుంది.",
+    navigatingTo: "ప్రశ్నకు నావిగేట్ చేయడం :",
+    nav1: "ఆ ప్రశ్నకు వెళ్లడానికి ప్యాలెట్లో ప్రశ్న నంబర్పై క్లిక్ చేయండి (ఇది మీ సమాధానాన్ని సేవ్ చేయదు).",
+    nav2: "మీ సమాధానాన్ని సేవ్ చేయడానికి మరియు తర్వాతి ప్రశ్నకు వెళ్లడానికి సేవ్ అండ్ నెక్స్ట్ పై క్లిక్ చేయండి.",
+    nav3: "సమాధానం సేవ్ చేయడానికి, సమీక్ష కోసం గుర్తించడానికి మరియు తర్వాతి ప్రశ్నకు వెళ్లడానికి మార్క్ ఫర్ రివ్యూ అండ్ నెక్స్ట్ పై క్లిక్ చేయండి.",
+    nav4: "ప్రశ్న పేపర్ / ప్యాలెట్ ఉపయోగించి మీరు మొత్తం పేపర్ను వీక్షించవచ్చు.",
+    answering: "ప్రశ్నలకు సమాధానం ఇవ్వడం :",
+    ans1: "సమాధానం ఎంచుకోవడానికి ఐచ్ఛిక బటన్పై క్లిక్ చేయండి.",
+    ans2: "సమాధానం మార్చడానికి మరొక ఐచ్ఛిక బటన్పై క్లిక్ చేయండి.",
+    ans3: "మీ సమాధానాన్ని సేవ్ చేయడానికి మీరు సేవ్ అండ్ నెక్స్ట్ పై క్లిక్ చేయాలి లేదా మరొక ప్రశ్నకు వెళ్లాలి.",
+    next: "తర్వాత >>",
+    photo: "ఫోటో",
+    otherWarnings: "ఇతర ముఖ్యమైన సూచనలు / హెచ్చరికలు",
+    warn1: "ప్రదర్శించిన ప్రశ్న పేపర్ అభ్యాస ప్రయోజనాల కోసం మాత్రమే. ఏ పరిస్థితిలోనూ ఇది ప్రధాన పేపర్గా భావించబడకూడదు.",
+    warn2: "ఈ సైట్ Google Chrome యొక్క తాజా వెర్షన్ కోసం ఆప్టిమైజ్ చేయబడింది. ఇతర బ్రౌజర్లు సరిగా పనిచేయకపోవచ్చు.",
+    warn3: "పరీక్ష రాసేటప్పుడు మౌస్ను విండో బయటకు తరలించవద్దు. అలా చేస్తే కౌంట్డౌన్ కనిపించవచ్చు. సమయంలో క్లిక్ చేయకపోతే మీ పరీక్ష స్వయంచాలకంగా సమర్పించబడవచ్చు.",
+    warn4: "పరీక్ష రాసేటప్పుడు మీరు ఉద్దేశపూర్వకంగా పరీక్ష విండోను మూసివేస్తే, మీ పరీక్ష మరింత నిర్ధారణ లేకుండా సమర్పించబడుతుంది.",
+    notice: "నోటీసు",
+    noticeText: "పరీక్ష ప్రయత్నిస్తున్నప్పుడు సిస్టమ్ 5 నిమిషాలు నిష్క్రియంగా ఉంటే, అది స్వయంచాలకంగా సమర్పించబడుతుంది.",
+    previous: "<< మునుపటి",
+    checkboxText: "నేను సూచనలను చదివాను మరియు అర్థం చేసుకున్నాను. నాకు కేటాయించిన అన్ని కంప్యూటర్ హార్డ్వేర్ సరిగా పనిచేస్తున్నాయి. సూచనలను పాటించనట్లయితే నన్ను పరీక్ష నివ్వడం నుండి అనర్హుడిగా ప్రకటిస్తానని అంగీకరిస్తాను.",
+    readyToBegin: "నేను ప్రారంభించడానికి సిద్ధంగా ఉన్నాను",
+  },
+};
+
 export default function ExamTestPage({ params }) {
   const { exam, test: testId } = use(params);
   const router = useRouter();
@@ -83,6 +198,11 @@ export default function ExamTestPage({ params }) {
     studentClass: "",
     collegeCode: null,
   });
+  const [instructionsStep, setInstructionsStep] = useState(0); // 0 = page 1, 1 = page 2, 2 = fullscreen gate
+  const [instructionsAcknowledged, setInstructionsAcknowledged] = useState(false);
+  const [instructionLang, setInstructionLang] = useState("en"); // "en" | "hi" | "te"
+  const [collegeLogoUrl, setCollegeLogoUrl] = useState(null);
+  const [collegeName, setCollegeName] = useState(null);
 
   /* ================= LOAD TEST (server cache API + ID token) ================= */
   /* Wait for auth so refresh shows Loading... then Start button instead of blank */
@@ -155,6 +275,45 @@ export default function ExamTestPage({ params }) {
 
     return () => unsub();
   }, [testId, router]);
+
+  /* ================= FETCH COLLEGE LOGO + NAME ================= */
+  useEffect(() => {
+    const code = studentInfo?.collegeCode != null && String(studentInfo.collegeCode).trim() !== ""
+      ? String(studentInfo.collegeCode).trim()
+      : null;
+    if (!code) {
+      setCollegeLogoUrl(null);
+      setCollegeName(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = query(
+          collection(db, "users"),
+          where("role", "==", "collegeAdmin"),
+          where("collegeShort", "==", code),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        if (cancelled) return;
+        if (!snap.empty) {
+          const d = snap.docs[0].data();
+          setCollegeLogoUrl(d.logoUrl || null);
+          setCollegeName(d.collegeName || d.name || d.email || code);
+        } else {
+          setCollegeLogoUrl(null);
+          setCollegeName(code);
+        }
+      } catch {
+        if (!cancelled) {
+          setCollegeLogoUrl(null);
+          setCollegeName(null);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [studentInfo?.collegeCode]);
 
   /* ================= TIMER ================= */
   useEffect(() => {
@@ -476,8 +635,24 @@ export default function ExamTestPage({ params }) {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
           <div className={`${gradeInfo.bg} p-6 text-center`}>
+            {(collegeLogoUrl || collegeName) && (
+              <div className="flex items-center justify-center gap-2 mb-3">
+                {collegeLogoUrl && (
+                  <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 bg-white flex items-center justify-center shrink-0">
+                    {collegeLogoUrl.includes("cloudinary.com") ? (
+                      <Image src={collegeLogoUrl} alt="" width={40} height={40} className="w-full h-full object-contain p-0.5" unoptimized={false} />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={collegeLogoUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                    )}
+                  </div>
+                )}
+                {collegeName && <span className="text-gray-700 font-medium text-sm">{collegeName}</span>}
+              </div>
+            )}
             <h1 className="text-2xl font-bold text-gray-800 mb-2">Test Completed!</h1>
             <p className="text-gray-600">{test.name}</p>
+            <p className="text-sm text-gray-500 mt-1">RankSprint Test</p>
           </div>
           <div className="flex justify-center -mt-8">
             <div
@@ -531,7 +706,17 @@ export default function ExamTestPage({ params }) {
     );
   }
 
-  /* ================= FULLSCREEN GATE ================= */
+  /* ================= ENTER FULLSCREEN TO VIEW INSTRUCTIONS ================= */
+  const enterFullscreenForInstructions = async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+      setIsFullscreen(true);
+    } catch {
+      alert("Fullscreen permission required to view instructions.");
+    }
+  };
+
+  /* ================= INSTRUCTIONS & FULLSCREEN GATE ================= */
   if (!isFullscreen) {
     if (isPaused && started && !submitted) {
       return (
@@ -556,14 +741,34 @@ export default function ExamTestPage({ params }) {
         </div>
       );
     }
+
+    /* Gate: require fullscreen before viewing instructions */
+    if (instructionsStep === 0 || instructionsStep === 1) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-white">
+          <div className="text-center max-w-md px-4">
+            <h2 className="text-xl font-bold text-black mb-2">Fullscreen Required</h2>
+            <p className="text-black mb-6">Please enter fullscreen to view the instructions and begin the test.</p>
+            <button
+              onClick={enterFullscreenForInstructions}
+              className="text-blue-600 hover:text-blue-800 font-semibold underline text-lg"
+            >
+              Enter Fullscreen to View Instructions
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    /* Fullscreen gate: shown after instructions (step 2) when user exited fullscreen */
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="bg-white p-8 rounded shadow text-center">
-          <h2 className="text-xl font-bold mb-4">Fullscreen Required</h2>
-          <p className="text-gray-600 mb-4">{test.name}</p>
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-black mb-4">Fullscreen Required</h2>
+          <p className="text-black mb-4">{test.name}</p>
           <button
             onClick={startTest}
-            className="bg-blue-600 text-white px-6 py-2 rounded"
+            className="text-blue-600 hover:text-blue-800 font-semibold underline text-lg"
           >
             Enter Fullscreen & Start Test
           </button>
@@ -572,10 +777,249 @@ export default function ExamTestPage({ params }) {
     );
   }
 
+  /* ================= INSTRUCTIONS IN FULLSCREEN (JEE-style layout) ================= */
+  if (isFullscreen && !started && !submitted) {
+    const durationMins = test?.duration ?? 60;
+    const displayId = studentInfo.studentName || auth.currentUser?.email || auth.currentUser?.uid?.slice(-10) || "—";
+
+    /* Instructions Page 1: Left = instructions, Right = photo + ID */
+    if (instructionsStep === 0) {
+      const t = INSTRUCTION_TRANSLATIONS[instructionLang] || INSTRUCTION_TRANSLATIONS.en;
+      return (
+        <div className="min-h-screen h-screen flex bg-white overflow-hidden">
+          {/* Left: Instructions - scrollable */}
+          <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+            <div className="max-w-2xl">
+              <div className="flex justify-between items-start gap-4 mb-6">
+                <h1 className="text-xl sm:text-2xl font-bold text-black">
+                  {t.pleaseRead}
+                </h1>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-black text-sm">{t.viewIn}</span>
+                  <select
+                    value={instructionLang}
+                    onChange={(e) => setInstructionLang(e.target.value)}
+                    className="border border-gray-300 rounded text-black text-sm px-2 py-1 bg-white min-w-[100px]"
+                  >
+                    <option value="en">English</option>
+                    <option value="hi">हिंदी</option>
+                    <option value="te">తెలుగు</option>
+                  </select>
+                </div>
+              </div>
+
+              <section className="mb-5">
+                <h2 className="font-bold text-black mb-2">{t.generalInstructions}</h2>
+                <ol className="list-decimal list-inside space-y-2 text-black text-sm sm:text-base">
+                  <li>{t.durationLine(durationMins)}</li>
+                  <li>{t.timerLine}</li>
+                  <li className="mt-3">
+                    <span className="font-bold text-black">{t.questionPalette}</span>
+                    <ul className="mt-2 space-y-1.5 ml-2">
+                      <li className="flex items-center gap-2 text-black">
+                        <span className="w-7 h-7 rounded-full bg-gray-200 border border-gray-400 flex items-center justify-center text-xs font-medium flex-shrink-0 text-black">0</span>
+                        {t.notVisited}
+                      </li>
+                      <li className="flex items-center gap-2 text-black">
+                        <span className="w-7 h-7 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">0</span>
+                        {t.answered}
+                      </li>
+                      <li className="flex items-center gap-2 text-black">
+                        <span className="w-7 h-7 rounded-full bg-red-500 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">0</span>
+                        {t.notAnswered}
+                      </li>
+                      <li className="flex items-center gap-2 text-black">
+                        <span className="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">0</span>
+                        {t.markedNotAnswered}
+                      </li>
+                      <li className="flex items-center gap-2 text-black">
+                        <span className="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">0</span>
+                        {t.markedAnswered}
+                      </li>
+                    </ul>
+                    <p className="mt-2 text-black text-sm">
+                      <strong>{t.markedNote}</strong> {t.markedReminder}{" "}
+                      <span className="text-red-600 font-medium">{t.markedWarning}</span>
+                    </p>
+                  </li>
+                </ol>
+              </section>
+
+              <section className="mb-5">
+                <h2 className="font-bold text-black mb-2">{t.navigatingTo}</h2>
+                <ol className="list-decimal list-inside space-y-1 text-black text-sm sm:text-base ml-0" start={4}>
+                  <li>{t.nav1}</li>
+                  <li>{t.nav2}</li>
+                  <li>{t.nav3}</li>
+                  <li>{t.nav4}</li>
+                </ol>
+              </section>
+
+              <section className="mb-6">
+                <h2 className="font-bold text-black mb-2">{t.answering}</h2>
+                <ol className="list-decimal list-inside space-y-1 text-black text-sm sm:text-base ml-0" start={6}>
+                  <li>{t.ans1}</li>
+                  <li>{t.ans2}</li>
+                  <li>{t.ans3}</li>
+                </ol>
+              </section>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setInstructionsStep(1)}
+                  className="text-blue-600 hover:text-blue-800 font-semibold px-4 py-2"
+                >
+                  {t.next}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: College logo + name, User photo + ID panel */}
+          <div className="w-48 sm:w-56 flex-shrink-0 border-l border-gray-200 bg-white flex flex-col items-center pt-6 pb-4 px-4">
+            {(collegeLogoUrl || collegeName) && (
+              <>
+                {collegeLogoUrl && (
+                  <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-gray-200 bg-white flex items-center justify-center shrink-0 mb-3">
+                    {collegeLogoUrl.includes("cloudinary.com") ? (
+                      <Image src={collegeLogoUrl} alt="" width={56} height={56} className="w-full h-full object-contain p-0.5" unoptimized={false} />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={collegeLogoUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                    )}
+                  </div>
+                )}
+                {collegeName && <p className="text-black font-medium text-sm text-center mb-3">{collegeName}</p>}
+              </>
+            )}
+            <div className="w-24 h-28 sm:w-28 sm:h-32 bg-gray-100 border-2 border-gray-300 rounded flex items-center justify-center text-gray-400 text-xs">
+              {t.photo}
+            </div>
+            <p className="mt-4 text-black font-medium text-sm break-all text-center">{displayId}</p>
+          </div>
+        </div>
+      );
+    }
+
+    /* Instructions Page 2: Warnings + checkbox + I am ready to begin (fullscreen) */
+    if (instructionsStep === 1) {
+      const t = INSTRUCTION_TRANSLATIONS[instructionLang] || INSTRUCTION_TRANSLATIONS.en;
+      return (
+        <div className="min-h-screen h-screen flex bg-white overflow-y-auto">
+          <div className="flex-1 max-w-2xl mx-auto p-6 sm:p-8">
+            <div className="flex justify-between items-center gap-2 mb-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                {collegeLogoUrl && (
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-200 bg-white flex items-center justify-center shrink-0">
+                    {collegeLogoUrl.includes("cloudinary.com") ? (
+                      <Image src={collegeLogoUrl} alt="" width={32} height={32} className="w-full h-full object-contain p-0.5" unoptimized={false} />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={collegeLogoUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                    )}
+                  </div>
+                )}
+                {collegeName && <span className="text-black font-medium text-sm">{collegeName}</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-black text-sm">{t.viewIn}</span>
+              <select
+                value={instructionLang}
+                onChange={(e) => setInstructionLang(e.target.value)}
+                className="border border-gray-300 rounded text-black text-sm px-2 py-1 bg-white min-w-[100px]"
+              >
+                <option value="en">English</option>
+                <option value="hi">हिंदी</option>
+                <option value="te">తెలుగు</option>
+              </select>
+              </div>
+            </div>
+            <div className="bg-red-600 text-white text-center font-bold py-2 px-4 rounded mb-6">
+              {t.otherWarnings}
+            </div>
+
+            <ol className="list-decimal list-inside space-y-3 text-blue-700 text-sm sm:text-base mb-6">
+              <li>{t.warn1}</li>
+              <li>{t.warn2}</li>
+              <li>{t.warn3}</li>
+              <li>{t.warn4}</li>
+            </ol>
+
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-lg font-bold text-blue-800 mb-2">{t.notice}</p>
+              <p className="text-blue-700 text-sm sm:text-base">
+                {t.noticeText}
+              </p>
+            </div>
+
+            <div className="flex justify-center mb-6">
+              <button
+                type="button"
+                onClick={() => setInstructionsStep(0)}
+                className="text-blue-600 hover:text-blue-800 font-medium"
+              >
+                {t.previous}
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={instructionsAcknowledged}
+                  onChange={(e) => setInstructionsAcknowledged(e.target.checked)}
+                  className="mt-1 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-black text-sm sm:text-base">
+                  {t.checkboxText}
+                </span>
+              </label>
+            </div>
+
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!instructionsAcknowledged) return;
+                  startTest();
+                }}
+                disabled={!instructionsAcknowledged}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-8 rounded transition-colors"
+              >
+                {t.readyToBegin}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+  }
+
   /* ================= TEST UI ================= */
   return (
     <ProtectedRoute>
       <div className="max-w-7xl mx-auto p-3 sm:p-4 lg:p-6">
+        {/* College logo + name + RankSprint Test - top bar */}
+        <div className="bg-white border rounded-lg mb-4 p-3 sm:p-4 flex items-center gap-3 flex-wrap">
+          {(collegeLogoUrl || collegeName) && (
+            <>
+              {collegeLogoUrl && (
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200 bg-white flex items-center justify-center shrink-0">
+                  {collegeLogoUrl.includes("cloudinary.com") ? (
+                    <Image src={collegeLogoUrl} alt="" width={48} height={48} className="w-full h-full object-contain p-0.5" unoptimized={false} />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={collegeLogoUrl} alt="" className="w-full h-full object-contain p-0.5" />
+                  )}
+                </div>
+              )}
+              {collegeName && <span className="text-gray-700 font-medium text-sm sm:text-base">{collegeName}</span>}
+            </>
+          )}
+          <span className="font-bold text-gray-800 text-base sm:text-lg">RankSprint Test</span>
+        </div>
+
         {subjects.length > 0 && (
           <div className="bg-white border rounded-lg mb-4 p-3 sm:p-4">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">

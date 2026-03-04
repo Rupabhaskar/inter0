@@ -138,8 +138,12 @@ export default function Navbar() {
     return () => { cancelled = true; };
   }, [user?.uid, role]);
 
+  // Hide navbar on home, test routes, and when taking an exam (college test or exam test)
+  const isTakingExam =
+    pathname.startsWith("/select-test/") &&
+    pathname.split("/").filter(Boolean).length >= 3; // e.g. /select-test/college/[testId] or /select-test/[exam]/[test]
   const hideNavbar =
-    pathname === "/" || pathname.startsWith("/test");
+    pathname === "/" || pathname.startsWith("/test") || isTakingExam;
   const loginOnlyLogo = pathname === "/login" || pathname === "/college";
   const isCollegeDashboard = pathname.startsWith("/college/dashboard");
 
