@@ -77,6 +77,7 @@ export default function Page() {
     imagePublicId: "",
     questionImageFile: null,
     subject: "",
+    topic: "",
   };
 
   const [qData, setQData] = useState(emptyQuestion);
@@ -371,6 +372,7 @@ export default function Page() {
         imageUrl: "",
         imagePublicId: "",
         subject: qData.subject || "",
+        topic: qData.topic || "",
       });
       questionId = newQuestionRef.id;
     }
@@ -419,6 +421,7 @@ export default function Page() {
       imageUrl: finalImageUrl,
       imagePublicId: finalImagePublicId,
       subject: qData.subject || "",
+      topic: qData.topic || "",
     };
 
     await updateDoc(
@@ -479,6 +482,7 @@ export default function Page() {
         correctAnswers: correct,
         isMultiple: correct.length > 1,
         subject: row["Subject"] || "",
+        topic: row["Topic"] || row["Chapter"] || "",
       });
     }
 
@@ -847,6 +851,7 @@ function QuestionSection({
       imagePublicId: q.imagePublicId || "",
       questionImageFile: null,
       subject: q.subject || "",
+      topic: q.topic || "",
     });
     setShowForm(true);
   };
@@ -1050,7 +1055,7 @@ function QuestionSection({
       <div className="flex flex-wrap justify-between gap-4 mb-4">
         <h2 className="text-xl font-bold">Questions – {test.name}</h2>
 
-        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-600">Subject:</label>
             <select
@@ -1086,7 +1091,19 @@ function QuestionSection({
 
           <button
             onClick={() => {
-              setQData({ text: "", options: [""], optionImages: [""], optionImagePublicIds: [""], optionImageFiles: [null], correctAnswers: [], imageUrl: "", imagePublicId: "", questionImageFile: null, subject: "" });
+              setQData({
+                text: "",
+                options: [""],
+                optionImages: [""],
+                optionImagePublicIds: [""],
+                optionImageFiles: [null],
+                correctAnswers: [],
+                imageUrl: "",
+                imagePublicId: "",
+                questionImageFile: null,
+                subject: "",
+                topic: "",
+              });
               setEditingQuestion(null);
               setShowForm(true);
             }}
@@ -1182,6 +1199,14 @@ function QuestionSection({
               value={qData.subject || ""}
               onChange={(e) =>
                 setQData({ ...qData, subject: e.target.value })
+              }
+            />
+            <input
+              className="w-full p-2 border mb-3 rounded"
+              placeholder="Topic / Chapter name"
+              value={qData.topic || ""}
+              onChange={(e) =>
+                setQData({ ...qData, topic: e.target.value })
               }
             />
             
@@ -1349,7 +1374,17 @@ function QuestionSection({
                   )}
                 </div>
                 <p className="text-sm text-gray-500 mt-2">
-                  {q.subject && <span className="text-blue-600 font-semibold">{q.subject} • </span>}
+                  {q.subject && (
+                    <span className="text-blue-600 font-semibold">
+                      {q.subject}
+                      {q.topic ? " • " : ""}
+                    </span>
+                  )}
+                  {q.topic && (
+                    <span className="text-purple-600 font-semibold">
+                      {q.subject ? "" : "Topic: "} {q.topic}{" "}
+                    </span>
+                  )}
                   {q.isMultiple ? "Multiple Answer" : "Single Answer"}
                 </p>
               </div>
@@ -1419,6 +1454,12 @@ function QuestionSection({
                   placeholder="Subject/Section (e.g., Physics, Chemistry, Math)"
                   value={qData.subject || ""}
                   onChange={(e) => setQData({ ...qData, subject: e.target.value })}
+                />
+                <input
+                  className="w-full p-2 border mb-3 rounded"
+                  placeholder="Topic / Chapter name"
+                  value={qData.topic || ""}
+                  onChange={(e) => setQData({ ...qData, topic: e.target.value })}
                 />
                 <div
                   className="mb-3"

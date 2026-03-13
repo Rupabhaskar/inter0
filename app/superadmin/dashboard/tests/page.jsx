@@ -73,6 +73,7 @@ export default function Page() {
     imagePublicId: "",
     questionImageFile: null,
     subject: "",
+    topic: "",
   };
 
   const [qData, setQData] = useState(emptyQuestion);
@@ -301,8 +302,8 @@ export default function Page() {
 
   const saveQuestion = async () => {
     if (!selectedTest?.id) return;
-    if (!qData.text || qData.correctAnswers.length === 0)
-      return alert("Question & correct answer required");
+    if (!qData.text || !qData.topic || !qData.topic.trim() || qData.correctAnswers.length === 0)
+      return alert("Question, topic/chapter & correct answer are required");
 
     let questionId;
 
@@ -321,6 +322,8 @@ export default function Page() {
           isMultiple: qData.correctAnswers.length > 1,
           imageUrl: "",
           imagePublicId: "",
+          subject: qData.subject || "",
+          topic: qData.topic || "",
         }
       );
       questionId = newQuestionRef.id;
@@ -380,6 +383,7 @@ export default function Page() {
       imageUrl: finalImageUrl,
       imagePublicId: finalImagePublicId,
       subject: qData.subject || "",
+      topic: qData.topic || "",
     };
 
     await updateDoc(
@@ -411,6 +415,8 @@ export default function Page() {
     const questionsToAdd = [];
     for (const row of rows) {
       const text = row["Question"];
+      const topicCell = row["Topic"] || row["Chapter"] || "";
+      const topic = String(topicCell || "").trim();
       const rawOptions = [
         row["Option A"],
         row["Option B"],
@@ -421,7 +427,7 @@ export default function Page() {
         (x) => x !== undefined && x !== null && (x === 0 || x === "0" || String(x).trim() !== "")
       );
 
-      if (!text || options.length < 2) continue;
+      if (!text || options.length < 2 || !topic) continue;
 
       const correct = String(row["Correct Answer"])
         .toUpperCase()
@@ -437,6 +443,7 @@ export default function Page() {
         correctAnswers: correct,
         isMultiple: correct.length > 1,
         subject: row["Subject"] || "",
+        topic,
       });
     }
 
@@ -796,6 +803,7 @@ function QuestionSection({
       imagePublicId: q.imagePublicId || "",
       questionImageFile: null,
       subject: q.subject || "",
+      topic: q.topic || "",
     });
     setShowForm(true);
   };
@@ -1112,6 +1120,7 @@ function QuestionSection({
                   <th className="border border-gray-300 p-2 text-left">Option D</th>
                   <th className="border border-gray-300 p-2 text-left">Correct Answer</th>
                   <th className="border border-gray-300 p-2 text-left">Subject</th>
+                  <th className="border border-gray-300 p-2 text-left">Topic / Chapter</th>
                 </tr>
               </thead>
               <tbody>
@@ -1123,6 +1132,7 @@ function QuestionSection({
                   <td className="border border-gray-300 p-2">6</td>
                   <td className="border border-gray-300 p-2">B</td>
                   <td className="border border-gray-300 p-2">Math</td>
+                  <td className="border border-gray-300 p-2">Addition</td>
                 </tr>
                 <tr>
                   <td className="border border-gray-300 p-2">Which are prime numbers?</td>
@@ -1132,6 +1142,7 @@ function QuestionSection({
                   <td className="border border-gray-300 p-2">6</td>
                   <td className="border border-gray-300 p-2">A,C</td>
                   <td className="border border-gray-300 p-2">Math</td>
+                  <td className="border border-gray-300 p-2">Prime Numbers</td>
                 </tr>
               </tbody>
             </table>
@@ -1143,8 +1154,9 @@ function QuestionSection({
               <li><strong>Option A, B, C, D:</strong> Answer options (at least 2 required)</li>
               <li><strong>Correct Answer:</strong> Single answer (e.g., &quot;A&quot;) or multiple answers (e.g., &quot;A,C&quot; or &quot;A, C&quot;)</li>
               <li><strong>Subject:</strong> Subject/Section name (optional, e.g., Physics, Chemistry, Math)</li>
+              <li><strong>Topic / Chapter:</strong> Topic or chapter name (required; rows without this will be skipped)</li>
               <li>First row must contain column headers exactly as shown above</li>
-              <li>Empty rows or rows with missing Question will be skipped</li>
+              <li>Empty rows or rows with missing Question/Topic will be skipped</li>
             </ul>
           </div>
         </div>
@@ -1170,6 +1182,16 @@ function QuestionSection({
               value={qData.subject || ""}
               onChange={(e) =>
                 setQData({ ...qData, subject: e.target.value })
+              }
+            />
+
+            {/* Topic / Chapter */}
+            <input
+              className="w-full p-2 border mb-3 rounded"
+              placeholder="Topic / Chapter name"
+              value={qData.topic || ""}
+              onChange={(e) =>
+                setQData({ ...qData, topic: e.target.value })
               }
             />
 
@@ -1356,7 +1378,17 @@ function QuestionSection({
                 )}
               </div>
               <p className="text-sm text-gray-500 mt-2">
-                {q.subject && <span className="text-blue-600 font-semibold">{q.subject} • </span>}
+                {q.subject && (
+                  <span className="text-blue-600 font-semibold">
+                    {q.subject}
+                    {q.topic ? " • " : ""}
+                  </span>
+                )}
+                {q.topic && (
+                  <span className="text-purple-600 font-semibold">
+                    {q.subject ? "" : "Topic: "} {q.topic}{" "}
+                  </span>
+                )}
                 {q.isMultiple ? "Multiple Answer" : "Single Answer"}
               </p>
             </div>
@@ -1431,6 +1463,14 @@ function QuestionSection({
                   value={qData.subject || ""}
                   onChange={(e) =>
                     setQData({ ...qData, subject: e.target.value })
+                  }
+                />
+                <input
+                  className="w-full p-2 border mb-3 rounded"
+                  placeholder="Topic / Chapter name"
+                  value={qData.topic || ""}
+                  onChange={(e) =>
+                    setQData({ ...qData, topic: e.target.value })
                   }
                 />
                 <div
