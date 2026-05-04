@@ -1,0 +1,211 @@
+================================================================================
+                    IMAGE CACHE ARCHITECTURE - SINGLE SHEET
+================================================================================
+
+OVERVIEW:
+---------
+Google Sheets acts as a cache layer for Cloudinary image URLs.
+All image URLs are stored in a single sheet called "ImageCache".
+
+================================================================================
+                              SHEET STRUCTURE
+================================================================================
+
+Sheet Name: ImageCache
+
+┌─────────────────┬───────────────┬────────────┬─────────────────────────────┐
+│ Question ID     │ Option Number │ Image Type │ Image URL                   │
+├─────────────────┼───────────────┼────────────┼─────────────────────────────┤
+│ abc123          │               │ question   │ https://cloudinary.com/...  │
+│ abc123          │ 0             │ option     │ https://cloudinary.com/...  │
+│ abc123          │ 1             │ option     │ https://cloudinary.com/...  │
+│ def456          │               │ question   │ https://cloudinary.com/...  │
+│ def456          │ 0             │ option     │ https://cloudinary.com/...  │
+└─────────────────┴───────────────┴────────────┴─────────────────────────────┘
+
+Unique Key: questionId | imageType | optionNumber
+  - Question image: "abc123|question|"
+  - Option 0 image: "abc123|option|0"
+  - Option 1 image: "abc123|option|1"
+
+================================================================================
+                           UPLOAD FLOW (ADMIN)
+================================================================================
+
+File: app/college/dashboard/tests/page.jsx
+API:  /college/api/upload-image
+
+                    ┌─────────────────────┐
+                    │  Admin uploads      │
+                    │  image in form      │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Pre-compress       │
+                    │  (client-side)      │
+                    │  if >= 100KB        │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Upload to          │
+                    │  Cloudinary         │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Get Cloudinary     │
+                    │  URL + publicId     │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+              ┌────────────────────────────────────┐
+              │  Check ImageCache sheet            │
+              │                                    │
+              │  Key exists?                       │
+              │  ├─ YES: URL same? → Skip          │
+              │  │       URL diff? → Update row    │
+              │  └─ NO:  Add new row               │
+              └────────────────┬───────────────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Return URL to      │
+                    │  client             │
+                    └─────────────────────┘
+
+================================================================================
+                          FETCH FLOW (STUDENT)
+================================================================================
+
+File: app/select-test/college/[testId]/page.jsx
+API:  /college/api/image-cache
+
+                    ┌─────────────────────┐
+                    │  Student loads      │
+                    │  test page          │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Fetch questions    │
+                    │  from Firestore     │
+                    │  (has Cloudinary    │
+                    │   URLs already)     │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Call image-cache   │
+                    │  API (POST)         │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+              ┌────────────────────────────────────┐
+              │  For each image in questions:      │
+              │                                    │
+              │  Check ImageCache sheet            │
+              │  ├─ CACHE HIT:  Image in sheet     │
+              │  │              → Skip (no action) │
+              │  │                                 │
+              │  └─ CACHE MISS: Image not in sheet │
+              │                 → Add to sheet     │
+              └────────────────┬───────────────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │  Display images     │
+                    │  from Cloudinary    │
+                    │  CDN (optimized)    │
+                    └─────────────────────┘
+
+================================================================================
+                              KEY SCENARIOS
+================================================================================
+
+1. QUESTION IMAGE NOT IN SHEET
+   → Store with: questionId + "question" + ""
+   → Example key: "abc123|question|"
+
+2. QUESTION EXISTS, OPTION 0 MISSING
+   → Store ONLY option 0 with: questionId + "option" + "0"
+   → Example key: "abc123|option|0"
+
+3. QUESTION EXISTS, OPTION 1 MISSING
+   → Store ONLY option 1 with: questionId + "option" + "1"
+   → Example key: "abc123|option|1"
+
+4. IMAGE ALREADY IN SHEET (SAME URL)
+   → Skip (no duplicate created)
+
+5. IMAGE IN SHEET BUT URL CHANGED
+   → Update existing row with new URL
+
+================================================================================
+                               API ENDPOINTS
+================================================================================
+
+┌────────────────────────────┬────────┬──────────────────────────────────────┐
+│ Endpoint                   │ Method │ Purpose                              │
+├────────────────────────────┼────────┼──────────────────────────────────────┤
+│ /college/api/upload-image  │ POST   │ Upload to Cloudinary                 │
+│                            │        │ + Store URL in ImageCache sheet      │
+│                            │        │ + Delete from Cloudinary & Sheet     │
+├────────────────────────────┼────────┼──────────────────────────────────────┤
+│ /college/api/image-cache   │ POST   │ Check cache for images               │
+│                            │        │ + Store missing images to sheet      │
+├────────────────────────────┼────────┼──────────────────────────────────────┤
+│ /college/api/image-cache   │ GET    │ Fetch cached URLs by question IDs    │
+│                            │        │ ?questionIds=id1,id2,id3             │
+└────────────────────────────┴────────┴──────────────────────────────────────┘
+
+================================================================================
+                           CLOUDINARY OPTIMIZATION
+================================================================================
+
+Images are optimized using Cloudinary URL transformations:
+
+Original URL:
+  https://res.cloudinary.com/.../upload/v123/folder/image.png
+
+Optimized URL:
+  https://res.cloudinary.com/.../upload/f_auto,q_auto,w_500/v123/folder/image.png
+
+Transformations:
+  - f_auto: Auto format (WebP, AVIF based on browser)
+  - q_auto: Auto quality compression
+  - w_500:  Max width 500px (question) or 300px (option)
+
+================================================================================
+                              DATA FLOW SUMMARY
+================================================================================
+
+ADMIN UPLOADS IMAGE:
+  Browser → Compress → Cloudinary → Sheet (ImageCache) → Firestore
+
+STUDENT VIEWS TEST:
+  Firestore → Check Sheet → Add missing to Sheet → Display from Cloudinary CDN
+
+DUPLICATE PREVENTION:
+  - Unique key per image: questionId|imageType|optionNumber
+  - Check before insert, update if URL changed
+  - processedKeys Set prevents same-request duplicates
+
+================================================================================
+                                 FILES
+================================================================================
+
+Admin Test Management:
+  app/college/dashboard/tests/page.jsx
+
+Student Test Page:
+  app/select-test/college/[testId]/page.jsx
+
+Upload API:
+  app/college/api/upload-image/route.js
+
+Cache API:
+  app/college/api/image-cache/route.js
+
+================================================================================
