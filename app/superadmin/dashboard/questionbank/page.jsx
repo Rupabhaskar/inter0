@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import * as XLSX from "xlsx";
 import imageCompression from "browser-image-compression";
@@ -845,6 +845,14 @@ function QuestionSection({
     loadQuestions();
   }, [loadQuestions]);
 
+  useLayoutEffect(() => {
+    if (!showForm || !editingQuestion?.id) return;
+    const el = document.getElementById(`qb-edit-${editingQuestion.id}`);
+    requestAnimationFrame(() => {
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, [showForm, editingQuestion?.id]);
+
   const addOption = () =>
     setQData((prev) => ({
       ...prev,
@@ -1562,74 +1570,8 @@ function QuestionSection({
     });
   };
 
-  return (
-    <div className="bg-white p-6 rounded-xl shadow md:col-span-3">
-      <div className="flex flex-wrap justify-between gap-4 mb-4">
-        <h2 className="text-xl font-bold">
-          Questions - {subject.name || subject.id}
-        </h2>
-        <div className="flex gap-2">
-          <label className="bg-purple-600 text-white px-4 py-2 rounded cursor-pointer">
-            Upload Excel
-            <input
-              type="file"
-              accept=".xlsx,.csv"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
-          <button onClick={startCreate} className="bg-blue-600 text-white px-4 py-2 rounded">
-            + Add Question
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
-        Excel columns: <strong>Question</strong>, <strong>Option A</strong>, <strong>Option B</strong>,
-        optional <strong>Option C..F</strong>, <strong>Correct Answer</strong> (e.g. A or A,C),
-        <strong> Topic</strong>, <strong>Level</strong> (easy/medium/hard)
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <label className="text-sm font-medium text-gray-700">Topic:</label>
-        <select
-          value={topicFilter.trim().toLowerCase()}
-          onChange={(e) => setTopicFilter(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm"
-        >
-          <option value="">All topics</option>
-          {topicGroups.map(({ key, label }) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
-
-        <label className="text-sm font-medium text-gray-700 ml-2">Level:</label>
-        <select
-          value={levelFilter}
-          onChange={(e) => setLevelFilter(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm"
-        >
-          <option value="">All levels</option>
-          {levelFilterOptions.map((level) => (
-            <option key={level} value={level}>
-              {level}
-            </option>
-          ))}
-        </select>
-
-        <span className="text-sm text-gray-500 ml-auto">
-          Showing {filteredQuestions.length} of {questions.length} question
-          {questions.length !== 1 ? "s" : ""}
-        </span>
-        <span className="text-xs text-gray-500 w-full sm:w-auto sm:ml-2">
-          Topic filter ignores capital letters; level matches exactly (case-sensitive).
-        </span>
-      </div>
-
-      {showForm && (
-        <div className="border p-4 rounded mb-6 bg-gray-50">
+  const renderQuestionEditorForm = () => (
+        <div className="border p-4 rounded mb-0 bg-gray-50">
           <textarea
             className="w-full p-2 border mb-3 rounded min-h-[80px] resize-y"
             placeholder="Question text"
@@ -1955,7 +1897,75 @@ function QuestionSection({
             </button>
           </div>
         </div>
-      )}
+  );
+
+  return (
+    <div className="bg-white p-6 rounded-xl shadow md:col-span-3">
+      <div className="flex flex-wrap justify-between gap-4 mb-4">
+        <h2 className="text-xl font-bold">
+          Questions - {subject.name || subject.id}
+        </h2>
+        <div className="flex gap-2">
+          <label className="bg-purple-600 text-white px-4 py-2 rounded cursor-pointer">
+            Upload Excel
+            <input
+              type="file"
+              accept=".xlsx,.csv"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+          </label>
+          <button onClick={startCreate} className="bg-blue-600 text-white px-4 py-2 rounded">
+            + Add Question
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-900">
+        Excel columns: <strong>Question</strong>, <strong>Option A</strong>, <strong>Option B</strong>,
+        optional <strong>Option C..F</strong>, <strong>Correct Answer</strong> (e.g. A or A,C),
+        <strong> Topic</strong>, <strong>Level</strong> (easy/medium/hard)
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <label className="text-sm font-medium text-gray-700">Topic:</label>
+        <select
+          value={topicFilter.trim().toLowerCase()}
+          onChange={(e) => setTopicFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm"
+        >
+          <option value="">All topics</option>
+          {topicGroups.map(({ key, label }) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+
+        <label className="text-sm font-medium text-gray-700 ml-2">Level:</label>
+        <select
+          value={levelFilter}
+          onChange={(e) => setLevelFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm"
+        >
+          <option value="">All levels</option>
+          {levelFilterOptions.map((level) => (
+            <option key={level} value={level}>
+              {level}
+            </option>
+          ))}
+        </select>
+
+        <span className="text-sm text-gray-500 ml-auto">
+          Showing {filteredQuestions.length} of {questions.length} question
+          {questions.length !== 1 ? "s" : ""}
+        </span>
+        <span className="text-xs text-gray-500 w-full sm:w-auto sm:ml-2">
+          Topic filter ignores capital letters; level matches exactly (case-sensitive).
+        </span>
+      </div>
+
+      {showForm && !editingQuestion && <div className="mb-6">{renderQuestionEditorForm()}</div>}
 
       {filteredQuestions.length === 0 ? (
         <p className="text-gray-500 py-6 text-center">
@@ -1965,7 +1975,8 @@ function QuestionSection({
         </p>
       ) : (
         filteredQuestions.map((question) => (
-          <div key={question.id} className="border p-4 rounded mb-2 bg-white">
+          <div key={question.id} className="mb-3">
+            <div className="border p-4 rounded bg-white">
             <div className="flex justify-between gap-4">
               <div className="flex-1">
                 <p className="font-semibold whitespace-pre-wrap">{question.text}</p>
@@ -2037,6 +2048,15 @@ function QuestionSection({
                 </button>
               </div>
             </div>
+            </div>
+            {showForm && editingQuestion?.id === question.id && (
+              <div
+                id={`qb-edit-${question.id}`}
+                className="mt-2 rounded-lg border-2 border-blue-300 bg-slate-50/80 shadow-sm overflow-hidden"
+              >
+                {renderQuestionEditorForm()}
+              </div>
+            )}
           </div>
         ))
       )}
