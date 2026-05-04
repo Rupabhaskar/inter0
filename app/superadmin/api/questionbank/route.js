@@ -90,10 +90,12 @@ async function findQuestionDocRef(questionDb, subjectId, questionId) {
     .collection("questions")
     .get();
 
-  for (const topicDoc of topicsSnap.docs) {
-    const candidateRef = topicDoc.ref.collection("id").doc(questionId);
-    const candidateSnap = await candidateRef.get();
-    if (candidateSnap.exists) return candidateRef;
+  const candidates = topicsSnap.docs.map((topicDoc) =>
+    topicDoc.ref.collection("id").doc(questionId)
+  );
+  const candidateSnaps = await Promise.all(candidates.map((ref) => ref.get()));
+  for (let i = 0; i < candidateSnaps.length; i += 1) {
+    if (candidateSnaps[i].exists) return candidates[i];
   }
 
   // Fallback: recover orphan nested docs created before topic-doc initialization.
@@ -117,15 +119,24 @@ export async function GET(req) {
     const subjectId = searchParams.get("subjectId")?.trim();
 
     if (subjectId) {
-      const legacyOrTopicsSnap = await questionDb
+      const questionsRef = questionDb
         .collection("QuestionBank")
         .doc(subjectId)
-        .collection("questions")
-        .get();
+        .collection("questions");
+
+      const legacyOrTopicsSnap = await questionsRef.get();
+
+      if (legacyOrTopicsSnap.empty) {
+        return NextResponse.json({ questions: [] });
+      }
 
       const byId = new Map();
-      for (const docSnap of legacyOrTopicsSnap.docs) {
-        const nestedIdsSnap = await docSnap.ref.collection("id").get();
+      const nestedSnaps = await Promise.all(
+        legacyOrTopicsSnap.docs.map((docSnap) => docSnap.ref.collection("id").get())
+      );
+
+      legacyOrTopicsSnap.docs.forEach((docSnap, i) => {
+        const nestedIdsSnap = nestedSnaps[i];
         if (!nestedIdsSnap.empty) {
           nestedIdsSnap.docs.forEach((qDoc) => {
             byId.set(qDoc.id, serializeDoc(qDoc));
@@ -135,7 +146,7 @@ export async function GET(req) {
           // /QuestionBank/{subject}/questions/{questionId}
           byId.set(docSnap.id, serializeDoc(docSnap));
         }
-      }
+      });
 
       // Fallback for orphan nested docs when topic doc does not exist.
       if (byId.size === 0) {

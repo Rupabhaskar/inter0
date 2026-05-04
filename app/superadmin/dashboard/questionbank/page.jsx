@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import * as XLSX from "xlsx";
 import imageCompression from "browser-image-compression";
@@ -120,7 +120,9 @@ function htmlSupSubToLatex(html) {
       if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
       if (nodeName === "sup") {
         const inner = Array.from(node.childNodes).map(walk).join("").trim();
-        return inner ? `^{${inner}}` : "";
+        if (!inner) return "";
+        if (/^[0-9]+$/.test(inner)) return digitsToUnicodeSuperscript(inner);
+        return `^{${inner}}`;
       }
       if (nodeName === "sub") {
         const inner = Array.from(node.childNodes).map(walk).join("").trim();
@@ -166,6 +168,62 @@ function convertUnicodeSuperscripts(text) {
     if (!digits) return m;
     return `${base}^{${digits}}`;
   });
+}
+
+const UNICODE_SUP_DIGITS = {
+  0: "⁰",
+  1: "¹",
+  2: "²",
+  3: "³",
+  4: "⁴",
+  5: "⁵",
+  6: "⁶",
+  7: "⁷",
+  8: "⁸",
+  9: "⁹",
+};
+
+function digitsToUnicodeSuperscript(digits) {
+  return String(digits || "")
+    .split("")
+    .map((d) => UNICODE_SUP_DIGITS[d] ?? d)
+    .join("");
+}
+
+function convertAlgebraicCaretExponentsToUnicode(text) {
+  let s = String(text || "");
+  s = s.replace(/([A-Za-z])\^\{([0-9]+)\}/g, (_, b, d) => b + digitsToUnicodeSuperscript(d));
+  s = s.replace(/([A-Za-z])\^([0-9]+)/g, (_, b, d) => b + digitsToUnicodeSuperscript(d));
+  s = s.replace(/\)\^\{([0-9]+)\}/g, (_, d) => ")" + digitsToUnicodeSuperscript(d));
+  s = s.replace(/\)\^([0-9]+)/g, (_, d) => ")" + digitsToUnicodeSuperscript(d));
+  s = s.replace(/(\d+)\^\{([0-9]+)\}/g, (_, b, d) => b + digitsToUnicodeSuperscript(d));
+  s = s.replace(/(\d+)\^([0-9]+)/g, (_, b, d) => b + digitsToUnicodeSuperscript(d));
+  return s;
+}
+
+function collapseNewlinesOutsideLatexBlocks(text) {
+  const s = String(text || "").replace(/\r\n/g, "\n");
+  const re = /(\\begin\{[a-zA-Z*]+\}[\s\S]*?\\end\{[a-zA-Z*]+\})/g;
+  const out = [];
+  let last = 0;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    out.push(
+      s
+        .slice(last, m.index)
+        .replace(/\n+/g, " ")
+        .replace(/[ \t]{2,}/g, " ")
+    );
+    out.push(m[1]);
+    last = m.index + m[1].length;
+  }
+  out.push(
+    s
+      .slice(last)
+      .replace(/\n+/g, " ")
+      .replace(/[ \t]{2,}/g, " ")
+  );
+  return out.join("").trim();
 }
 
 function normalizeMathLikeToken(token) {
@@ -371,14 +429,18 @@ function renderKatexOrNull(text) {
   const hasSentenceLikeWords = /[A-Za-z]{2,}\s+[A-Za-z]{2,}/.test(converted);
   if (hasSentenceLikeWords && !isMatrix) return null;
 
+  const hasUnicodeSuper = /[⁰¹²³⁴⁵⁶⁷⁸⁹]/.test(raw);
   const looksMath =
     converted !== raw ||
     converted.includes("\\") ||
-    /[\^_]|\\sqrt|\\frac|\\begin\{/.test(converted);
+    /[\^_]|\\sqrt|\\frac|\\begin\{/.test(converted) ||
+    hasUnicodeSuper;
   if (!looksMath) return null;
 
+  const forKatex = convertUnicodeSuperscripts(converted);
+
   try {
-    return katex.renderToString(converted, {
+    return katex.renderToString(forKatex, {
       throwOnError: false,
       displayMode: true,
       strict: "ignore",
@@ -416,6 +478,36 @@ async function requestQuestionBank(path = "", options = {}) {
   return data;
 }
 
+const questionBankQuestionsBySubject = new Map();
+
+async function fetchQuestionsForSubject(subjectId, { bypassCache = false } = {}) {
+  if (bypassCache) questionBankQuestionsBySubject.delete(subjectId);
+
+  const existing = questionBankQuestionsBySubject.get(subjectId);
+  if (existing) return existing;
+
+  const promise = requestQuestionBank(`?subjectId=${encodeURIComponent(subjectId)}`)
+    .then((data) => data.questions || [])
+    .catch((err) => {
+      if (questionBankQuestionsBySubject.get(subjectId) === promise) {
+        questionBankQuestionsBySubject.delete(subjectId);
+      }
+      throw err;
+    });
+
+  questionBankQuestionsBySubject.set(subjectId, promise);
+
+  promise.then(() => {
+    setTimeout(() => {
+      if (questionBankQuestionsBySubject.get(subjectId) === promise) {
+        questionBankQuestionsBySubject.delete(subjectId);
+      }
+    }, 500);
+  });
+
+  return promise;
+}
+
 const emptyQuestion = {
   text: "",
   options: ["", ""],
@@ -433,7 +525,7 @@ const emptyQuestion = {
 export default function Page() {
   const [subjects, setSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState(null);
-  const [expandedSubjects, setExpandedSubjects] = useState(new Set());
+  const [expandedSubjectId, setExpandedSubjectId] = useState(null);
 
   const [subjectName, setSubjectName] = useState("");
   const [subjectSearch, setSubjectSearch] = useState("");
@@ -580,11 +672,7 @@ export default function Page() {
         body: JSON.stringify({ action: "deleteSubject", subjectId: subject.id }),
       });
       if (selectedSubject?.id === subject.id) setSelectedSubject(null);
-      setExpandedSubjects((prev) => {
-        const next = new Set(prev);
-        next.delete(subject.id);
-        return next;
-      });
+      setExpandedSubjectId((prev) => (prev === subject.id ? null : prev));
       await loadSubjects();
     } catch (err) {
       alert(err.message || "Failed to delete subject");
@@ -592,16 +680,13 @@ export default function Page() {
   };
 
   const toggleSubject = (subject) => {
-    setExpandedSubjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(subject.id)) {
-        next.delete(subject.id);
-        if (selectedSubject?.id === subject.id) setSelectedSubject(null);
-      } else {
-        next.add(subject.id);
-        setSelectedSubject(subject);
+    setExpandedSubjectId((prev) => {
+      if (prev === subject.id) {
+        setSelectedSubject((s) => (s?.id === subject.id ? null : s));
+        return null;
       }
-      return next;
+      setSelectedSubject(subject);
+      return subject.id;
     });
   };
 
@@ -646,7 +731,7 @@ export default function Page() {
           )}
 
           {filteredSubjects.map((subject) => {
-            const isExpanded = expandedSubjects.has(subject.id);
+            const isExpanded = expandedSubjectId === subject.id;
             const isSelected = selectedSubject?.id === subject.id;
             return (
               <div
@@ -734,6 +819,8 @@ function QuestionSection({
   /** Image used only for OCR (camera/upload in Analyze block), not attached as question image */
   const [ocrStagingFile, setOcrStagingFile] = useState(null);
   const [ocrStagingPreview, setOcrStagingPreview] = useState("");
+  const [topicSuggestOpen, setTopicSuggestOpen] = useState(false);
+  const savingQuestionRef = useRef(false);
 
   const clearOcrStaging = useCallback(() => {
     setOcrStagingPreview((prev) => {
@@ -743,10 +830,11 @@ function QuestionSection({
     setOcrStagingFile(null);
   }, []);
 
-  const loadQuestions = useCallback(async () => {
+  const loadQuestions = useCallback(async (options = {}) => {
+    const bypassCache = Boolean(options.bypassCache);
     try {
-      const data = await requestQuestionBank(`?subjectId=${encodeURIComponent(subject.id)}`);
-      setQuestions(data.questions || []);
+      const qs = await fetchQuestionsForSubject(subject.id, { bypassCache });
+      setQuestions(qs);
     } catch (err) {
       console.error("Failed to load questions:", err);
       alert(err.message || "Failed to load questions");
@@ -804,6 +892,7 @@ function QuestionSection({
     }));
 
   const saveQuestion = async () => {
+    if (savingQuestionRef.current) return;
     const text = (qData.text || "").trim();
     const topic = (qData.topic || "").trim();
     const level = (qData.level || "").toLowerCase();
@@ -836,107 +925,130 @@ function QuestionSection({
       subject: subject.name || subject.id,
     };
 
-    if (editingQuestion?.id) {
-      await requestQuestionBank("", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "updateQuestion",
-          subjectId: subject.id,
-          questionId: editingQuestion.id,
-          payload,
-        }),
-      });
-    } else {
-      const createResponse = await requestQuestionBank("", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createQuestion",
-          subjectId: subject.id,
-          payload: {
-            ...payload,
-            optionImages: [],
-            optionImagePublicIds: [],
-            imageUrl: "",
-            imagePublicId: "",
-          },
-        }),
-      });
-      const questionId = createResponse.questionId;
-
-      let finalImageUrl = qData.imageUrl || "";
-      let finalImagePublicId = qData.imagePublicId || "";
-      const finalOptionImages = [...(qData.optionImages || [])];
-      const finalOptionImagePublicIds = [...(qData.optionImagePublicIds || [])];
-
-      const uploadPromises = [];
-      if (qData.questionImageFile) {
-        uploadPromises.push(
-          uploadImage(qData.questionImageFile, questionId, null, "question").then((result) => {
-            if (result) {
-              finalImageUrl = result.url;
-              finalImagePublicId = result.publicId;
-            }
-          })
-        );
-      }
-
-      if (qData.optionImageFiles) {
-        qData.optionImageFiles.forEach((file, i) => {
-          if (file) {
-            uploadPromises.push(
-              uploadImage(file, questionId, i, "option").then((result) => {
-                if (result) {
-                  finalOptionImages[i] = result.url;
-                  finalOptionImagePublicIds[i] = result.publicId;
-                }
-              })
-            );
-          }
+    savingQuestionRef.current = true;
+    try {
+      if (editingQuestion?.id) {
+        await requestQuestionBank("", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "updateQuestion",
+            subjectId: subject.id,
+            questionId: editingQuestion.id,
+            payload,
+          }),
         });
-      }
-      await Promise.all(uploadPromises);
+        setQuestions((prev) =>
+          prev.map((q) => (q.id === editingQuestion.id ? { ...q, ...payload, id: q.id } : q))
+        );
+      } else {
+        const createResponse = await requestQuestionBank("", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "createQuestion",
+            subjectId: subject.id,
+            payload: {
+              ...payload,
+              optionImages: [],
+              optionImagePublicIds: [],
+              imageUrl: "",
+              imagePublicId: "",
+            },
+          }),
+        });
+        const questionId = createResponse.questionId;
 
-      const hasQuestionImage = Boolean(finalImageUrl || finalImagePublicId);
-      const hasOptionImages = finalOptionImages.some(Boolean);
-      const hasOptionImageIds = finalOptionImagePublicIds.some(Boolean);
-      const needsFollowUpUpdate = hasQuestionImage || hasOptionImages || hasOptionImageIds;
+        let finalImageUrl = qData.imageUrl || "";
+        let finalImagePublicId = qData.imagePublicId || "";
+        const finalOptionImages = [...(qData.optionImages || [])];
+        const finalOptionImagePublicIds = [...(qData.optionImagePublicIds || [])];
 
-      if (needsFollowUpUpdate) {
-        try {
-          await requestQuestionBank("", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "updateQuestion",
-              subjectId: subject.id,
-              questionId,
-              payload: {
-                topic,
-                optionImages: finalOptionImages,
-                optionImagePublicIds: finalOptionImagePublicIds,
-                imageUrl: finalImageUrl,
-                imagePublicId: finalImagePublicId,
-              },
-            }),
-          });
-        } catch (err) {
-          console.warn(
-            "Question created, but follow-up image metadata update failed:",
-            err?.message || err
+        const uploadPromises = [];
+        if (qData.questionImageFile) {
+          uploadPromises.push(
+            uploadImage(qData.questionImageFile, questionId, null, "question").then((result) => {
+              if (result) {
+                finalImageUrl = result.url;
+                finalImagePublicId = result.publicId;
+              }
+            })
           );
         }
-      }
-    }
 
-    setQData(emptyQuestion);
-    setEditingQuestion(null);
-    setOcrText("");
-    setOcrError("");
-    clearOcrStaging();
-    setShowForm(false);
-    await loadQuestions();
+        if (qData.optionImageFiles) {
+          qData.optionImageFiles.forEach((file, i) => {
+            if (file) {
+              uploadPromises.push(
+                uploadImage(file, questionId, i, "option").then((result) => {
+                  if (result) {
+                    finalOptionImages[i] = result.url;
+                    finalOptionImagePublicIds[i] = result.publicId;
+                  }
+                })
+              );
+            }
+          });
+        }
+        await Promise.all(uploadPromises);
+
+        const hasQuestionImage = Boolean(finalImageUrl || finalImagePublicId);
+        const hasOptionImages = finalOptionImages.some(Boolean);
+        const hasOptionImageIds = finalOptionImagePublicIds.some(Boolean);
+        const needsFollowUpUpdate = hasQuestionImage || hasOptionImages || hasOptionImageIds;
+
+        if (needsFollowUpUpdate) {
+          try {
+            await requestQuestionBank("", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "updateQuestion",
+                subjectId: subject.id,
+                questionId,
+                payload: {
+                  topic,
+                  optionImages: finalOptionImages,
+                  optionImagePublicIds: finalOptionImagePublicIds,
+                  imageUrl: finalImageUrl,
+                  imagePublicId: finalImagePublicId,
+                },
+              }),
+            });
+          } catch (err) {
+            console.warn(
+              "Question created, but follow-up image metadata update failed:",
+              err?.message || err
+            );
+          }
+        }
+
+        setQuestions((prev) => [
+          {
+            id: questionId,
+            ...payload,
+            optionImages: finalOptionImages,
+            optionImagePublicIds: finalOptionImagePublicIds,
+            imageUrl: finalImageUrl,
+            imagePublicId: finalImagePublicId,
+          },
+          ...prev,
+        ]);
+      }
+
+      setQData(emptyQuestion);
+      setEditingQuestion(null);
+      setOcrText("");
+      setOcrError("");
+      clearOcrStaging();
+      setShowForm(false);
+      void loadQuestions({ bypassCache: true });
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Failed to save question");
+    } finally {
+      savingQuestionRef.current = false;
+    }
   };
 
   const startCreate = () => {
@@ -1046,8 +1158,9 @@ function QuestionSection({
       const base = paste || htmlLatex;
       let converted = convertMathPasteToLatex(base);
       converted = normalizeEquationSyntax(converted);
-      converted = convertUnicodeSuperscripts(converted);
       converted = fixMissingExponents(converted);
+      converted = convertAlgebraicCaretExponentsToUnicode(converted);
+      converted = collapseNewlinesOutsideLatexBlocks(converted);
       if (converted === base) return;
 
       e.preventDefault();
@@ -1056,6 +1169,14 @@ function QuestionSection({
       const end = el.selectionEnd ?? qData.text.length;
       const next = qData.text.slice(0, start) + converted + qData.text.slice(end);
       setQData({ ...qData, text: next });
+      requestAnimationFrame(() => {
+        try {
+          const pos = start + converted.length;
+          el.setSelectionRange(pos, pos);
+        } catch {
+          // ignore
+        }
+      });
     } catch {
       // If anything goes wrong, let default paste happen.
     }
@@ -1095,7 +1216,8 @@ function QuestionSection({
       clearOcrStaging();
       setShowForm(false);
     }
-    await loadQuestions();
+    setQuestions((prev) => prev.filter((q) => q.id !== questionId));
+    void loadQuestions({ bypassCache: true });
   };
 
   const handleFileUpload = async (e) => {
@@ -1157,16 +1279,86 @@ function QuestionSection({
     });
 
     alert(`Excel upload complete. Added ${toAdd.length} question(s).`);
-    await loadQuestions();
+    await loadQuestions({ bypassCache: true });
     e.target.value = "";
   };
 
-  const topicList = [...new Set(questions.map((q) => (q.topic || "").trim()).filter(Boolean))].sort();
-  const filteredQuestions = questions.filter((q) => {
-    if (topicFilter && (q.topic || "").trim() !== topicFilter) return false;
-    if (levelFilter && (q.level || "").toLowerCase() !== levelFilter) return false;
-    return true;
-  });
+  const topicGroups = useMemo(() => {
+    const lowerToCounts = new Map();
+    for (const q of questions) {
+      const raw = (q.topic || "").trim();
+      if (!raw) continue;
+      const k = raw.toLowerCase();
+      if (!lowerToCounts.has(k)) lowerToCounts.set(k, new Map());
+      const m = lowerToCounts.get(k);
+      m.set(raw, (m.get(raw) || 0) + 1);
+    }
+    const rows = [];
+    for (const [key, countMap] of lowerToCounts) {
+      let label = key;
+      let bestCount = -1;
+      for (const [variant, c] of countMap) {
+        if (
+          c > bestCount ||
+          (c === bestCount &&
+            variant.localeCompare(label, undefined, { sensitivity: "base", numeric: true }) < 0)
+        ) {
+          bestCount = c;
+          label = variant;
+        }
+      }
+      rows.push({ key, label });
+    }
+    rows.sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: "base" })
+    );
+    return rows;
+  }, [questions]);
+
+  const filteredQuestions = useMemo(() => {
+    const topicKey = topicFilter.trim().toLowerCase();
+    return questions.filter((q) => {
+      if (topicKey && (q.topic || "").trim().toLowerCase() !== topicKey) return false;
+      if (levelFilter && String(q.level || "") !== levelFilter) return false;
+      return true;
+    });
+  }, [questions, topicFilter, levelFilter]);
+
+  const levelFilterOptions = useMemo(() => {
+    const s = new Set();
+    for (const q of questions) {
+      const l = String(q.level || "").trim();
+      if (l) s.add(l);
+    }
+    for (const l of LEVELS) s.add(l);
+    return [...s].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "case" }));
+  }, [questions]);
+
+  const topicAddSuggestions = useMemo(() => {
+    const labels = topicGroups.map((g) => g.label);
+    const typed = (qData.topic || "").trim();
+    const typedLow = typed.toLowerCase();
+
+    const pick = (arr) =>
+      arr
+        .filter((l) => l.toLowerCase() !== typedLow)
+        .filter((l, i, a) => a.findIndex((x) => x.toLowerCase() === l.toLowerCase()) === i)
+        .slice(0, 12);
+
+    if (!typed) {
+      return pick(labels);
+    }
+    const prefix = labels.filter(
+      (l) => l.toLowerCase().startsWith(typedLow) && l.toLowerCase() !== typedLow
+    );
+    const rest = labels.filter(
+      (l) =>
+        !l.toLowerCase().startsWith(typedLow) &&
+        l.toLowerCase().includes(typedLow) &&
+        l.toLowerCase() !== typedLow
+    );
+    return pick([...prefix, ...rest]);
+  }, [topicGroups, qData.topic]);
 
   const handleQuestionImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -1401,14 +1593,14 @@ function QuestionSection({
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <label className="text-sm font-medium text-gray-700">Topic:</label>
         <select
-          value={topicFilter}
+          value={topicFilter.trim().toLowerCase()}
           onChange={(e) => setTopicFilter(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm"
         >
           <option value="">All topics</option>
-          {topicList.map((topic) => (
-            <option key={topic} value={topic}>
-              {topic}
+          {topicGroups.map(({ key, label }) => (
+            <option key={key} value={key}>
+              {label}
             </option>
           ))}
         </select>
@@ -1420,7 +1612,7 @@ function QuestionSection({
           className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm"
         >
           <option value="">All levels</option>
-          {LEVELS.map((level) => (
+          {levelFilterOptions.map((level) => (
             <option key={level} value={level}>
               {level}
             </option>
@@ -1430,6 +1622,9 @@ function QuestionSection({
         <span className="text-sm text-gray-500 ml-auto">
           Showing {filteredQuestions.length} of {questions.length} question
           {questions.length !== 1 ? "s" : ""}
+        </span>
+        <span className="text-xs text-gray-500 w-full sm:w-auto sm:ml-2">
+          Topic filter ignores capital letters; level matches exactly (case-sensitive).
         </span>
       </div>
 
@@ -1456,12 +1651,41 @@ function QuestionSection({
           })()}
 
           <div className="grid md:grid-cols-2 gap-3 mb-3">
-            <input
-              className="w-full p-2 border rounded"
-              placeholder="Topic / Chapter name"
-              value={qData.topic}
-              onChange={(e) => setQData((prev) => ({ ...prev, topic: e.target.value }))}
-            />
+            <div className="relative">
+              <input
+                className="w-full p-2 border rounded"
+                placeholder="Topic / Chapter name (suggestions from this bank)"
+                value={qData.topic}
+                onChange={(e) => setQData((prev) => ({ ...prev, topic: e.target.value }))}
+                onFocus={() => setTopicSuggestOpen(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setTopicSuggestOpen(false), 150);
+                }}
+                autoComplete="off"
+              />
+              {topicSuggestOpen && topicAddSuggestions.length > 0 && (
+                <ul
+                  className="absolute z-20 left-0 right-0 mt-1 max-h-48 overflow-auto rounded border border-gray-200 bg-white text-sm shadow-lg"
+                  role="listbox"
+                >
+                  {topicAddSuggestions.map((sug) => (
+                    <li key={sug}>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left hover:bg-blue-50 text-gray-800"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setQData((prev) => ({ ...prev, topic: sug }));
+                          setTopicSuggestOpen(false);
+                        }}
+                      >
+                        {sug}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <select
               className="w-full p-2 border rounded"
               value={qData.level}
