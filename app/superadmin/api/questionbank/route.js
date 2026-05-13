@@ -4,6 +4,129 @@ import { adminDb } from "@/lib/firebaseAdmin";
 import admin from "firebase-admin";
 
 const TIMESTAMP = admin.firestore.FieldValue.serverTimestamp;
+const FieldPath = admin.firestore.FieldPath;
+
+const DEFAULT_QUESTION_PAGE_SIZE = 80;
+const MAX_QUESTION_PAGE_SIZE = 250;
+
+function encodeQuestionCursor(lastDocPath) {
+  if (!lastDocPath) return null;
+  return Buffer.from(JSON.stringify({ p: lastDocPath }), "utf8").toString("base64url");
+}
+
+function decodeQuestionCursor(cursorParam) {
+  if (!cursorParam) return null;
+  try {
+    const raw = Buffer.from(cursorParam, "base64url").toString("utf8");
+    const obj = JSON.parse(raw);
+    return typeof obj?.p === "string" ? obj.p : null;
+  } catch {
+    return null;
+  }
+}
+
+function isLegacyQuestionTopDoc(docSnap) {
+  const d = docSnap.data() || {};
+  if (typeof d.text === "string" && d.text.trim()) return true;
+  if (Array.isArray(d.options) && d.options.length >= 2) return true;
+  return false;
+}
+
+function isTopicHubTopDoc(docSnap) {
+  const d = docSnap.data() || {};
+  return Boolean(String(d.topic || "").trim()) && !isLegacyQuestionTopDoc(docSnap);
+}
+
+async function tryCollectionGroupQuestionPage(questionDb, subjectId, nestedLimit, cursorPath, topicSlug) {
+  if (nestedLimit <= 0) {
+    return { docs: [], lastPath: null, usedCollectionGroup: true };
+  }
+
+  if (topicSlug) {
+    let q = questionDb
+      .collection("QuestionBank")
+      .doc(subjectId)
+      .collection("questions")
+      .doc(topicSlug)
+      .collection("id")
+      .orderBy(FieldPath.documentId())
+      .limit(nestedLimit);
+
+    if (cursorPath) {
+      const cur = await questionDb.doc(cursorPath).get();
+      if (cur.exists) q = q.startAfter(cur);
+    }
+    const snap = await q.get();
+    const docs = snap.docs;
+    const lastPath = snap.size === nestedLimit ? docs[docs.length - 1].ref.path : null;
+    return { docs, lastPath, usedCollectionGroup: true };
+  }
+
+  let q = questionDb
+    .collectionGroup("id")
+    .where("subjectId", "==", subjectId)
+    .orderBy(FieldPath.documentId())
+    .limit(nestedLimit);
+
+  if (cursorPath) {
+    const cur = await questionDb.doc(cursorPath).get();
+    if (cur.exists) q = q.startAfter(cur);
+  }
+
+  const snap = await q.get();
+  const docs = snap.docs;
+  const lastPath = snap.size === nestedLimit ? docs[docs.length - 1].ref.path : null;
+  return { docs, lastPath, usedCollectionGroup: true };
+}
+
+async function loadAllQuestionsLegacyPath(questionDb, subjectId) {
+  const questionsRef = questionDb.collection("QuestionBank").doc(subjectId).collection("questions");
+  const legacyOrTopicsSnap = await questionsRef.get();
+  if (legacyOrTopicsSnap.empty) {
+    return { questions: [], topicsMeta: [] };
+  }
+
+  const byId = new Map();
+  const nestedSnaps = await Promise.all(
+    legacyOrTopicsSnap.docs.map((docSnap) => docSnap.ref.collection("id").get())
+  );
+
+  legacyOrTopicsSnap.docs.forEach((docSnap, i) => {
+    const nestedIdsSnap = nestedSnaps[i];
+    if (!nestedIdsSnap.empty) {
+      nestedIdsSnap.docs.forEach((qDoc) => {
+        byId.set(qDoc.id, serializeDoc(qDoc));
+      });
+    } else if (!byId.has(docSnap.id)) {
+      byId.set(docSnap.id, serializeDoc(docSnap));
+    }
+  });
+
+  if (byId.size === 0) {
+    try {
+      const recovery = await questionDb
+        .collectionGroup("id")
+        .where("subjectId", "==", subjectId)
+        .limit(5000)
+        .get();
+      recovery.docs.forEach((docSnap) => {
+        byId.set(docSnap.id, serializeDoc(docSnap));
+      });
+    } catch (err) {
+      console.warn("QuestionBank recovery read skipped:", err?.message || err);
+    }
+  }
+
+  const sortedTop = [...legacyOrTopicsSnap.docs].sort((a, b) => a.id.localeCompare(b.id));
+  const topicsMeta = sortedTop
+    .filter((d) => isTopicHubTopDoc(d))
+    .map((d) => {
+      const data = d.data() || {};
+      return { id: d.id, name: String(data.topic || d.id) };
+    });
+
+  return { questions: Array.from(byId.values()), topicsMeta };
+}
 
 function getQuestionDbOrResponse() {
   const questionDb = getAdminQuestionDb() || adminDb;
@@ -90,22 +213,35 @@ async function findQuestionDocRef(questionDb, subjectId, questionId) {
     .collection("questions")
     .get();
 
-  const candidates = topicsSnap.docs.map((topicDoc) =>
-    topicDoc.ref.collection("id").doc(questionId)
-  );
+  const candidates = [];
+  for (const topicDoc of topicsSnap.docs) {
+    candidates.push(topicDoc.ref.collection("id").doc(questionId));
+    if (topicDoc.id === questionId && isLegacyQuestionTopDoc(topicDoc)) {
+      candidates.push(topicDoc.ref);
+    }
+  }
+
   const candidateSnaps = await Promise.all(candidates.map((ref) => ref.get()));
   for (let i = 0; i < candidateSnaps.length; i += 1) {
     if (candidateSnaps[i].exists) return candidates[i];
   }
 
-  // Fallback: recover orphan nested docs created before topic-doc initialization.
-  // Avoid indexed where() constraints to prevent FAILED_PRECONDITION.
-  const orphanSnap = await questionDb.collectionGroup("id").get();
-  const prefix = `QuestionBank/${subjectId}/questions/`;
-  const exact = orphanSnap.docs.find(
-    (d) => d.id === questionId && d.ref.path.startsWith(prefix)
-  );
-  if (exact) return exact.ref;
+  // Bounded lookup for nested docs (avoids scanning the entire "id" collection group).
+  try {
+    const scoped = await questionDb
+      .collectionGroup("id")
+      .where("subjectId", "==", subjectId)
+      .where(FieldPath.documentId(), "==", questionId)
+      .limit(5)
+      .get();
+    if (!scoped.empty) {
+      const prefix = `QuestionBank/${subjectId}/questions/`;
+      const hit = scoped.docs.find((d) => d.ref.path.startsWith(prefix));
+      if (hit) return hit.ref;
+    }
+  } catch (err) {
+    console.warn("QuestionBank findQuestion scoped collectionGroup skipped:", err?.message || err);
+  }
 
   return null;
 }
@@ -124,47 +260,118 @@ export async function GET(req) {
         .doc(subjectId)
         .collection("questions");
 
-      const legacyOrTopicsSnap = await questionsRef.get();
-
-      if (legacyOrTopicsSnap.empty) {
-        return NextResponse.json({ questions: [] });
+      const loadAll = searchParams.get("all") === "1";
+      if (loadAll) {
+        const { questions, topicsMeta } = await loadAllQuestionsLegacyPath(questionDb, subjectId);
+        return NextResponse.json({
+          questions,
+          topicsMeta,
+          hasMore: false,
+          nextCursor: null,
+          full: true,
+        });
       }
 
-      const byId = new Map();
-      const nestedSnaps = await Promise.all(
-        legacyOrTopicsSnap.docs.map((docSnap) => docSnap.ref.collection("id").get())
-      );
+      const topicSlugParam = searchParams.get("topicId")?.trim();
+      const topicSlug = topicSlugParam ? topicDocIdFromName(topicSlugParam) : "";
 
-      legacyOrTopicsSnap.docs.forEach((docSnap, i) => {
-        const nestedIdsSnap = nestedSnaps[i];
-        if (!nestedIdsSnap.empty) {
-          nestedIdsSnap.docs.forEach((qDoc) => {
-            byId.set(qDoc.id, serializeDoc(qDoc));
-          });
-        } else if (!byId.has(docSnap.id)) {
-          // Backward compatibility for legacy path:
-          // /QuestionBank/{subject}/questions/{questionId}
-          byId.set(docSnap.id, serializeDoc(docSnap));
+      let pageSize = DEFAULT_QUESTION_PAGE_SIZE;
+      const limitParam = searchParams.get("limit")?.trim();
+      if (limitParam) {
+        const n = parseInt(limitParam, 10);
+        if (Number.isFinite(n) && n > 0) {
+          pageSize = Math.min(MAX_QUESTION_PAGE_SIZE, Math.max(1, n));
         }
-      });
+      }
 
-      // Fallback for orphan nested docs when topic doc does not exist.
-      if (byId.size === 0) {
+      const cursorPath = decodeQuestionCursor(searchParams.get("cursor")?.trim());
+      const includeLegacy = !cursorPath;
+
+      const topSnap = await questionsRef.get();
+      if (topSnap.empty) {
+        return NextResponse.json({
+          questions: [],
+          topicsMeta: [],
+          hasMore: false,
+          nextCursor: null,
+          full: false,
+        });
+      }
+
+      const sortedTop = [...topSnap.docs].sort((a, b) => a.id.localeCompare(b.id));
+      const topicsMeta = sortedTop
+        .filter((d) => isTopicHubTopDoc(d))
+        .map((d) => {
+          const data = d.data() || {};
+          return { id: d.id, name: String(data.topic || d.id) };
+        });
+
+      const legacyQuestions = sortedTop
+        .filter((d) => isLegacyQuestionTopDoc(d))
+        .map((d) => serializeDoc(d));
+
+      const LEGACY_FIRST_PAGE_CAP = 30;
+      const byId = new Map();
+
+      if (includeLegacy) {
+        for (const q of legacyQuestions.slice(0, LEGACY_FIRST_PAGE_CAP)) {
+          if (q?.id) byId.set(q.id, q);
+        }
+      }
+
+      const nestedBudget = includeLegacy ? Math.max(0, pageSize - byId.size) : pageSize;
+
+      let nestedDocs = [];
+      let nestedLastPath = null;
+      let paginatedReadError = null;
+
+      if (nestedBudget > 0) {
         try {
-          const orphanSnap = await questionDb.collectionGroup("id").get();
-          const prefix = `QuestionBank/${subjectId}/questions/`;
-          orphanSnap.docs.forEach((docSnap) => {
-            if (docSnap.ref.path.startsWith(prefix)) {
-              byId.set(docSnap.id, serializeDoc(docSnap));
-            }
-          });
+          const topicDocIdForPath = topicSlugParam ? topicSlug : "";
+          const res = await tryCollectionGroupQuestionPage(
+            questionDb,
+            subjectId,
+            nestedBudget,
+            cursorPath,
+            topicDocIdForPath
+          );
+          nestedDocs = res.docs;
+          nestedLastPath = res.lastPath;
         } catch (err) {
-          console.warn("QuestionBank orphan fallback read skipped:", err?.message || err);
+          paginatedReadError = err?.message || String(err);
+          console.warn("QuestionBank paginated read failed:", paginatedReadError);
+        }
+
+        for (const d of nestedDocs) {
+          const row = serializeDoc(d);
+          if (row?.id) byId.set(row.id, row);
         }
       }
 
       const questions = Array.from(byId.values());
-      return NextResponse.json({ questions });
+      const hasMoreNested = Boolean(nestedLastPath);
+      const nextCursor = hasMoreNested ? encodeQuestionCursor(nestedLastPath) : null;
+
+      if (paginatedReadError && questions.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Could not load questions (index or query error). Create the Firestore composite index for collection group `id` on (subjectId, __name__), or use ?all=1 for a one-off full read.",
+            detail: paginatedReadError,
+            topicsMeta,
+          },
+          { status: 503 }
+        );
+      }
+
+      return NextResponse.json({
+        questions,
+        topicsMeta,
+        hasMore: hasMoreNested,
+        nextCursor,
+        full: false,
+        ...(paginatedReadError ? { warn: paginatedReadError } : {}),
+      });
     }
 
     const subjectsSnap = await questionDb.collection("QuestionBank").get();

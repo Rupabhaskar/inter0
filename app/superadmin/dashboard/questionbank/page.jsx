@@ -478,34 +478,83 @@ async function requestQuestionBank(path = "", options = {}) {
   return data;
 }
 
-const questionBankQuestionsBySubject = new Map();
+const QUESTION_BANK_PAGE_SIZE = 80;
+const QB_LIST_CACHE_MS = 8 * 60 * 1000;
+const qbListResolved = new Map();
+const qbListInFlight = new Map();
 
-async function fetchQuestionsForSubject(subjectId, { bypassCache = false } = {}) {
-  if (bypassCache) questionBankQuestionsBySubject.delete(subjectId);
+function qbListKey(subjectId, topicId, cursor) {
+  return `${subjectId}\t${topicId || ""}\t${cursor || ""}`;
+}
 
-  const existing = questionBankQuestionsBySubject.get(subjectId);
-  if (existing) return existing;
+function invalidateQuestionBankListCache(subjectId) {
+  const prefix = `${subjectId}\t`;
+  for (const k of [...qbListResolved.keys()]) {
+    if (k.startsWith(prefix)) qbListResolved.delete(k);
+  }
+  for (const k of [...qbListInFlight.keys()]) {
+    if (k.startsWith(prefix)) qbListInFlight.delete(k);
+  }
+}
 
-  const promise = requestQuestionBank(`?subjectId=${encodeURIComponent(subjectId)}`)
-    .then((data) => data.questions || [])
-    .catch((err) => {
-      if (questionBankQuestionsBySubject.get(subjectId) === promise) {
-        questionBankQuestionsBySubject.delete(subjectId);
-      }
-      throw err;
+function topicDocSlugFromLabel(label) {
+  return String(label || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[/\\]/g, "-")
+    .replace(/\s+/g, "-");
+}
+
+async function fetchQuestionBankListPage(subjectId, { topicId = "", cursor = null } = {}) {
+  const key = qbListKey(subjectId, topicId, cursor);
+  const cached = qbListResolved.get(key);
+  if (cached && Date.now() - cached.t < QB_LIST_CACHE_MS) return cached.v;
+
+  let promise = qbListInFlight.get(key);
+  if (!promise) {
+    const params = new URLSearchParams({
+      subjectId,
+      limit: String(QUESTION_BANK_PAGE_SIZE),
     });
+    if (topicId) params.set("topicId", topicId);
+    if (cursor) params.set("cursor", cursor);
 
-  questionBankQuestionsBySubject.set(subjectId, promise);
+    promise = requestQuestionBank(`?${params}`)
+      .then((data) => ({
+        questions: data.questions || [],
+        topicsMeta: data.topicsMeta || [],
+        hasMore: Boolean(data.hasMore),
+        nextCursor: data.nextCursor || null,
+        warn: data.warn,
+      }))
+      .then((v) => {
+        qbListResolved.set(key, { t: Date.now(), v });
+        return v;
+      })
+      .catch((err) => {
+        qbListResolved.delete(key);
+        throw err;
+      })
+      .finally(() => {
+        qbListInFlight.delete(key);
+      });
 
-  promise.then(() => {
-    setTimeout(() => {
-      if (questionBankQuestionsBySubject.get(subjectId) === promise) {
-        questionBankQuestionsBySubject.delete(subjectId);
-      }
-    }, 500);
-  });
+    qbListInFlight.set(key, promise);
+  }
 
   return promise;
+}
+
+async function fetchQuestionBankAllQuestions(subjectId) {
+  const data = await requestQuestionBank(
+    `?subjectId=${encodeURIComponent(subjectId)}&all=1`
+  );
+  return {
+    questions: data.questions || [],
+    topicsMeta: data.topicsMeta || [],
+    hasMore: false,
+    nextCursor: null,
+  };
 }
 
 const emptyQuestion = {
@@ -809,9 +858,16 @@ function QuestionSection({
   preCompressImage,
 }) {
   const [questions, setQuestions] = useState([]);
+  const [topicsMeta, setTopicsMeta] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [listLoading, setListLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [topicFilterId, setTopicFilterId] = useState("");
+  const nextCursorRef = useRef(null);
+  const loadingMoreRef = useRef(false);
   const [editingQuestion, setEditingQuestion] = useState(null);
   const [qData, setQData] = useState(emptyQuestion);
-  const [topicFilter, setTopicFilter] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrText, setOcrText] = useState("");
@@ -830,20 +886,67 @@ function QuestionSection({
     setOcrStagingFile(null);
   }, []);
 
-  const loadQuestions = useCallback(async (options = {}) => {
-    const bypassCache = Boolean(options.bypassCache);
-    try {
-      const qs = await fetchQuestionsForSubject(subject.id, { bypassCache });
-      setQuestions(qs);
-    } catch (err) {
-      console.error("Failed to load questions:", err);
-      alert(err.message || "Failed to load questions");
-    }
-  }, [subject.id]);
-
   useEffect(() => {
-    loadQuestions();
-  }, [loadQuestions]);
+    let cancelled = false;
+    setListLoading(true);
+    setQuestions([]);
+    setHasMore(false);
+    setNextCursor(null);
+    nextCursorRef.current = null;
+    loadingMoreRef.current = false;
+
+    (async () => {
+      try {
+        const data = await fetchQuestionBankListPage(subject.id, { topicId: topicFilterId });
+        if (cancelled) return;
+        setQuestions(data.questions);
+        if (data.topicsMeta?.length) setTopicsMeta(data.topicsMeta);
+        setHasMore(data.hasMore);
+        setNextCursor(data.nextCursor);
+        nextCursorRef.current = data.nextCursor;
+        if (data.warn) console.warn("Question bank:", data.warn);
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to load questions:", err);
+          alert(err.message || "Failed to load questions");
+        }
+      } finally {
+        if (!cancelled) setListLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [subject.id, topicFilterId]);
+
+  const loadMoreQuestions = useCallback(async () => {
+    const cursor = nextCursorRef.current;
+    if (!cursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const data = await fetchQuestionBankListPage(subject.id, {
+        topicId: topicFilterId,
+        cursor,
+      });
+      setQuestions((prev) => {
+        const seen = new Set(prev.map((q) => q.id));
+        const add = data.questions.filter((q) => q.id && !seen.has(q.id));
+        return [...prev, ...add];
+      });
+      setHasMore(data.hasMore);
+      setNextCursor(data.nextCursor);
+      nextCursorRef.current = data.nextCursor;
+      if (data.warn) console.warn("Question bank:", data.warn);
+    } catch (err) {
+      console.error("Failed to load more questions:", err);
+      alert(err.message || "Failed to load more questions");
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [subject.id, topicFilterId]);
 
   useLayoutEffect(() => {
     if (!showForm || !editingQuestion?.id) return;
@@ -1050,7 +1153,7 @@ function QuestionSection({
       setOcrError("");
       clearOcrStaging();
       setShowForm(false);
-      void loadQuestions({ bypassCache: true });
+      invalidateQuestionBankListCache(subject.id);
     } catch (err) {
       console.error(err);
       alert(err?.message || "Failed to save question");
@@ -1225,7 +1328,7 @@ function QuestionSection({
       setShowForm(false);
     }
     setQuestions((prev) => prev.filter((q) => q.id !== questionId));
-    void loadQuestions({ bypassCache: true });
+    invalidateQuestionBankListCache(subject.id);
   };
 
   const handleFileUpload = async (e) => {
@@ -1287,7 +1390,20 @@ function QuestionSection({
     });
 
     alert(`Excel upload complete. Added ${toAdd.length} question(s).`);
-    await loadQuestions({ bypassCache: true });
+    invalidateQuestionBankListCache(subject.id);
+    setListLoading(true);
+    try {
+      const data = await fetchQuestionBankAllQuestions(subject.id);
+      setQuestions(data.questions);
+      if (data.topicsMeta?.length) setTopicsMeta(data.topicsMeta);
+      setHasMore(false);
+      setNextCursor(null);
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || "Reload after upload failed; refresh the page.");
+    } finally {
+      setListLoading(false);
+    }
     e.target.value = "";
   };
 
@@ -1323,14 +1439,29 @@ function QuestionSection({
     return rows;
   }, [questions]);
 
+  const topicSelectOptions = useMemo(() => {
+    const byId = new Map();
+    for (const t of topicsMeta || []) {
+      if (t?.id) byId.set(t.id, String(t.name || t.id));
+    }
+    for (const g of topicGroups) {
+      const id = topicDocSlugFromLabel(g.label);
+      if (!byId.has(id)) byId.set(id, g.label);
+    }
+    return [...byId.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
+      );
+  }, [topicsMeta, topicGroups]);
+
   const filteredQuestions = useMemo(() => {
-    const topicKey = topicFilter.trim().toLowerCase();
     return questions.filter((q) => {
-      if (topicKey && (q.topic || "").trim().toLowerCase() !== topicKey) return false;
+      if (topicFilterId && topicDocSlugFromLabel(q.topic || "") !== topicFilterId) return false;
       if (levelFilter && String(q.level || "") !== levelFilter) return false;
       return true;
     });
-  }, [questions, topicFilter, levelFilter]);
+  }, [questions, topicFilterId, levelFilter]);
 
   const levelFilterOptions = useMemo(() => {
     const s = new Set();
@@ -1930,14 +2061,14 @@ function QuestionSection({
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <label className="text-sm font-medium text-gray-700">Topic:</label>
         <select
-          value={topicFilter.trim().toLowerCase()}
-          onChange={(e) => setTopicFilter(e.target.value)}
+          value={topicFilterId}
+          onChange={(e) => setTopicFilterId(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-2 bg-white text-gray-800 text-sm"
         >
           <option value="">All topics</option>
-          {topicGroups.map(({ key, label }) => (
-            <option key={key} value={key}>
-              {label}
+          {topicSelectOptions.map(({ id, name }) => (
+            <option key={id} value={id}>
+              {name}
             </option>
           ))}
         </select>
@@ -1956,14 +2087,31 @@ function QuestionSection({
           ))}
         </select>
 
+        {hasMore && (
+          <button
+            type="button"
+            onClick={loadMoreQuestions}
+            disabled={loadingMore || listLoading}
+            className="ml-2 px-3 py-2 rounded-lg bg-slate-700 text-white text-sm disabled:opacity-50"
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        )}
+
         <span className="text-sm text-gray-500 ml-auto">
-          Showing {filteredQuestions.length} of {questions.length} question
-          {questions.length !== 1 ? "s" : ""}
+          Showing {filteredQuestions.length} loaded question{filteredQuestions.length !== 1 ? "s" : ""}
+          {hasMore ? " (more on server — use Load more)" : ""}
         </span>
         <span className="text-xs text-gray-500 w-full sm:w-auto sm:ml-2">
-          Topic filter ignores capital letters; level matches exactly (case-sensitive).
+          Topic list uses server metadata when available; level filter applies to loaded rows only.
         </span>
       </div>
+
+      {listLoading && (
+        <p className="text-sm text-gray-500 mb-3" aria-live="polite">
+          Loading questions…
+        </p>
+      )}
 
       {showForm && !editingQuestion && <div className="mb-6">{renderQuestionEditorForm()}</div>}
 
