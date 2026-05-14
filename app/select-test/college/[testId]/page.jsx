@@ -440,6 +440,7 @@ export default function CollegeTestPage() {
     document.addEventListener("fullscreenchange", onFull);
     return () =>
       document.removeEventListener("fullscreenchange", onFull);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- submitTest omitted to avoid re-attaching listener every render; invoked only on security paths
   }, [isFullscreen, started, submitted]);
 
   /* ================= BLOCK KEYS ================= */

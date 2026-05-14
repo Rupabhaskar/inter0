@@ -287,28 +287,34 @@ export async function GET(req) {
       const cursorPath = decodeQuestionCursor(searchParams.get("cursor")?.trim());
       const includeLegacy = !cursorPath;
 
-      const topSnap = await questionsRef.get();
-      if (topSnap.empty) {
-        return NextResponse.json({
-          questions: [],
-          topicsMeta: [],
-          hasMore: false,
-          nextCursor: null,
-          full: false,
-        });
+      /** First page only: list topics + legacy rows. Continuation pages must NOT call this — one read per doc under `questions/` and it dwarfs real pagination cost. */
+      let topicsMeta = [];
+      let legacyQuestions = [];
+
+      if (!cursorPath) {
+        const topSnap = await questionsRef.get();
+        if (topSnap.empty) {
+          return NextResponse.json({
+            questions: [],
+            topicsMeta: [],
+            hasMore: false,
+            nextCursor: null,
+            full: false,
+          });
+        }
+
+        const sortedTop = [...topSnap.docs].sort((a, b) => a.id.localeCompare(b.id));
+        topicsMeta = sortedTop
+          .filter((d) => isTopicHubTopDoc(d))
+          .map((d) => {
+            const data = d.data() || {};
+            return { id: d.id, name: String(data.topic || d.id) };
+          });
+
+        legacyQuestions = sortedTop
+          .filter((d) => isLegacyQuestionTopDoc(d))
+          .map((d) => serializeDoc(d));
       }
-
-      const sortedTop = [...topSnap.docs].sort((a, b) => a.id.localeCompare(b.id));
-      const topicsMeta = sortedTop
-        .filter((d) => isTopicHubTopDoc(d))
-        .map((d) => {
-          const data = d.data() || {};
-          return { id: d.id, name: String(data.topic || d.id) };
-        });
-
-      const legacyQuestions = sortedTop
-        .filter((d) => isLegacyQuestionTopDoc(d))
-        .map((d) => serializeDoc(d));
 
       const LEGACY_FIRST_PAGE_CAP = 30;
       const byId = new Map();

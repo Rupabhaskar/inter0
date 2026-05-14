@@ -480,11 +480,95 @@ async function requestQuestionBank(path = "", options = {}) {
 
 const QUESTION_BANK_PAGE_SIZE = 80;
 const QB_LIST_CACHE_MS = 8 * 60 * 1000;
+const QB_LIST_LS_MAX_CHARS = 2_400_000;
+const QB_SUBJECTS_LS_KEY = "qb:subjects:v1";
+
 const qbListResolved = new Map();
 const qbListInFlight = new Map();
 
 function qbListKey(subjectId, topicId, cursor) {
   return `${subjectId}\t${topicId || ""}\t${cursor || ""}`;
+}
+
+/** Stable localStorage key (tabs are awkward in some engines). */
+function qbListStorageKey(subjectId, topicId, cursor) {
+  return `qb:list:v1:${subjectId}|${topicId || ""}|${cursor || ""}`;
+}
+
+function readQuestionBankListFromLs(lsKey) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(lsKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.t !== "number" || !parsed.v) return null;
+    if (Date.now() - parsed.t > QB_LIST_CACHE_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeQuestionBankListToLs(lsKey, v) {
+  if (typeof window === "undefined") return;
+  try {
+    const body = JSON.stringify({ t: Date.now(), v });
+    if (body.length > QB_LIST_LS_MAX_CHARS) return;
+    localStorage.setItem(lsKey, body);
+  } catch {
+    /* quota or private mode */
+  }
+}
+
+function clearQuestionBankListLsForSubject(subjectId) {
+  if (typeof window === "undefined") return;
+  const prefix = `qb:list:v1:${subjectId}|`;
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(prefix)) keys.push(k);
+  }
+  keys.forEach((k) => {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+function readSubjectsFromLs() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(QB_SUBJECTS_LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.t !== "number" || !Array.isArray(parsed.v)) return null;
+    if (Date.now() - parsed.t > QB_LIST_CACHE_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeSubjectsToLs(subjects) {
+  if (typeof window === "undefined") return;
+  try {
+    const body = JSON.stringify({ t: Date.now(), v: subjects });
+    if (body.length > QB_LIST_LS_MAX_CHARS) return;
+    localStorage.setItem(QB_SUBJECTS_LS_KEY, body);
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearQuestionBankSubjectsLs() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(QB_SUBJECTS_LS_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 function invalidateQuestionBankListCache(subjectId) {
@@ -495,6 +579,7 @@ function invalidateQuestionBankListCache(subjectId) {
   for (const k of [...qbListInFlight.keys()]) {
     if (k.startsWith(prefix)) qbListInFlight.delete(k);
   }
+  clearQuestionBankListLsForSubject(subjectId);
 }
 
 function topicDocSlugFromLabel(label) {
@@ -505,12 +590,51 @@ function topicDocSlugFromLabel(label) {
     .replace(/\s+/g, "-");
 }
 
-async function fetchQuestionBankListPage(subjectId, { topicId = "", cursor = null } = {}) {
-  const key = qbListKey(subjectId, topicId, cursor);
-  const cached = qbListResolved.get(key);
-  if (cached && Date.now() - cached.t < QB_LIST_CACHE_MS) return cached.v;
+function normalizeQuestionTextForDedupe(s) {
+  return String(s || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
 
-  let promise = qbListInFlight.get(key);
+/** Same stem + options + correct indices ⇒ treated as duplicate for the loaded list. */
+function questionDuplicateFingerprint(q) {
+  const text = normalizeQuestionTextForDedupe(q.text);
+  const opts = (Array.isArray(q.options) ? q.options : []).map((o) => normalizeQuestionTextForDedupe(o));
+  const ca = [...(q.correctAnswers || [])]
+    .filter((n) => typeof n === "number" && Number.isFinite(n) && n >= 0)
+    .sort((a, b) => a - b)
+    .join(",");
+  return `${text}\u0000${opts.join("\u0001")}\u0000${ca}`;
+}
+
+async function fetchQuestionBankListPage(
+  subjectId,
+  { topicId = "", cursor = null, bypassCache = false } = {}
+) {
+  const memKey = qbListKey(subjectId, topicId, cursor);
+  const lsKey = qbListStorageKey(subjectId, topicId, cursor);
+
+  if (bypassCache) {
+    qbListResolved.delete(memKey);
+    qbListInFlight.delete(memKey);
+    try {
+      if (typeof window !== "undefined") localStorage.removeItem(lsKey);
+    } catch {
+      /* ignore */
+    }
+  } else {
+    const cached = qbListResolved.get(memKey);
+    if (cached && Date.now() - cached.t < QB_LIST_CACHE_MS) return cached.v;
+
+    const fromLs = readQuestionBankListFromLs(lsKey);
+    if (fromLs) {
+      qbListResolved.set(memKey, { t: fromLs.t, v: fromLs.v });
+      return fromLs.v;
+    }
+  }
+
+  let promise = qbListInFlight.get(memKey);
   if (!promise) {
     const params = new URLSearchParams({
       subjectId,
@@ -528,33 +652,23 @@ async function fetchQuestionBankListPage(subjectId, { topicId = "", cursor = nul
         warn: data.warn,
       }))
       .then((v) => {
-        qbListResolved.set(key, { t: Date.now(), v });
+        const t = Date.now();
+        qbListResolved.set(memKey, { t, v });
+        writeQuestionBankListToLs(lsKey, v);
         return v;
       })
       .catch((err) => {
-        qbListResolved.delete(key);
+        qbListResolved.delete(memKey);
         throw err;
       })
       .finally(() => {
-        qbListInFlight.delete(key);
+        qbListInFlight.delete(memKey);
       });
 
-    qbListInFlight.set(key, promise);
+    qbListInFlight.set(memKey, promise);
   }
 
   return promise;
-}
-
-async function fetchQuestionBankAllQuestions(subjectId) {
-  const data = await requestQuestionBank(
-    `?subjectId=${encodeURIComponent(subjectId)}&all=1`
-  );
-  return {
-    questions: data.questions || [],
-    topicsMeta: data.topicsMeta || [],
-    hasMore: false,
-    nextCursor: null,
-  };
 }
 
 const emptyQuestion = {
@@ -673,15 +787,28 @@ export default function Page() {
     }
   };
 
-  const loadSubjects = async () => {
+  const loadSubjects = async ({ bypassCache = false } = {}) => {
+    if (!bypassCache) {
+      const ls = readSubjectsFromLs();
+      if (ls) {
+        setSubjects(ls.v);
+        return;
+      }
+    } else {
+      clearQuestionBankSubjectsLs();
+    }
     try {
       const data = await requestQuestionBank();
-      setSubjects(data.subjects || []);
+      const list = data.subjects || [];
+      setSubjects(list);
+      writeSubjectsToLs(list);
     } catch (err) {
       console.error("Failed to load subjects:", err);
       alert(err.message || "Failed to load subjects");
     }
   };
+
+  const refreshSubjectsFromServer = () => loadSubjects({ bypassCache: true });
 
   useEffect(() => {
     loadSubjects();
@@ -707,7 +834,7 @@ export default function Page() {
         body: JSON.stringify({ action: "createSubject", name: value }),
       });
       setSubjectName("");
-      await loadSubjects();
+      await loadSubjects({ bypassCache: true });
     } catch (err) {
       alert(err.message || "Failed to create subject");
     }
@@ -722,7 +849,7 @@ export default function Page() {
       });
       if (selectedSubject?.id === subject.id) setSelectedSubject(null);
       setExpandedSubjectId((prev) => (prev === subject.id ? null : prev));
-      await loadSubjects();
+      await loadSubjects({ bypassCache: true });
     } catch (err) {
       alert(err.message || "Failed to delete subject");
     }
@@ -758,14 +885,21 @@ export default function Page() {
         <div className="bg-white p-6 rounded-xl shadow md:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
             <h2 className="text-xl font-bold">Question Bank Subjects</h2>
-            <input
-              type="text"
-              placeholder="Search subject..."
-              value={subjectSearch}
-              onChange={(e) => setSubjectSearch(e.target.value)}
-              className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
+            <button
+              type="button"
+              onClick={() => void refreshSubjectsFromServer()}
+              className="text-sm px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+            >
+              Refresh from server
+            </button>
           </div>
+          <input
+            type="text"
+            placeholder="Search subject..."
+            value={subjectSearch}
+            onChange={(e) => setSubjectSearch(e.target.value)}
+            className="w-full sm:w-64 px-3 py-2 mb-4 border border-gray-300 rounded-lg text-sm"
+          />
 
           <p className="text-sm text-gray-500 mb-3">
             Showing {filteredSubjects.length} subject{filteredSubjects.length !== 1 ? "s" : ""}
@@ -876,7 +1010,14 @@ function QuestionSection({
   const [ocrStagingFile, setOcrStagingFile] = useState(null);
   const [ocrStagingPreview, setOcrStagingPreview] = useState("");
   const [topicSuggestOpen, setTopicSuggestOpen] = useState(false);
+  const [listRefreshTick, setListRefreshTick] = useState(0);
+  const [showDupPanel, setShowDupPanel] = useState(false);
   const savingQuestionRef = useRef(false);
+
+  const refreshQuestionsFromServer = useCallback(() => {
+    invalidateQuestionBankListCache(subject.id);
+    setListRefreshTick((n) => n + 1);
+  }, [subject.id]);
 
   const clearOcrStaging = useCallback(() => {
     setOcrStagingPreview((prev) => {
@@ -888,6 +1029,7 @@ function QuestionSection({
 
   useEffect(() => {
     let cancelled = false;
+    setShowDupPanel(false);
     setListLoading(true);
     setQuestions([]);
     setHasMore(false);
@@ -918,7 +1060,7 @@ function QuestionSection({
     return () => {
       cancelled = true;
     };
-  }, [subject.id, topicFilterId]);
+  }, [subject.id, topicFilterId, listRefreshTick]);
 
   const loadMoreQuestions = useCallback(async () => {
     const cursor = nextCursorRef.current;
@@ -1393,11 +1535,13 @@ function QuestionSection({
     invalidateQuestionBankListCache(subject.id);
     setListLoading(true);
     try {
-      const data = await fetchQuestionBankAllQuestions(subject.id);
+      const data = await fetchQuestionBankListPage(subject.id, { topicId: topicFilterId });
       setQuestions(data.questions);
       if (data.topicsMeta?.length) setTopicsMeta(data.topicsMeta);
-      setHasMore(false);
-      setNextCursor(null);
+      setHasMore(data.hasMore);
+      setNextCursor(data.nextCursor);
+      nextCursorRef.current = data.nextCursor;
+      if (data.warn) console.warn("Question bank:", data.warn);
     } catch (err) {
       console.error(err);
       alert(err?.message || "Reload after upload failed; refresh the page.");
@@ -1462,6 +1606,39 @@ function QuestionSection({
       return true;
     });
   }, [questions, topicFilterId, levelFilter]);
+
+  const duplicateInfo = useMemo(() => {
+    const groups = new Map();
+    for (const q of questions) {
+      if (!q?.id) continue;
+      const fp = questionDuplicateFingerprint(q);
+      if (!groups.has(fp)) groups.set(fp, []);
+      groups.get(fp).push(q);
+    }
+    const dupGroups = [...groups.values()].filter((arr) => arr.length > 1);
+    const duplicateIds = new Set();
+    let dupQuestionCount = 0;
+    for (const arr of dupGroups) {
+      dupQuestionCount += arr.length;
+      arr.forEach((x) => duplicateIds.add(x.id));
+    }
+    return {
+      duplicateIds,
+      dupGroupCount: dupGroups.length,
+      dupQuestionCount,
+      dupGroupsPreview: dupGroups.map((arr) => ({
+        ids: arr.map((x) => x.id).join(", "),
+        preview: String(arr[0]?.text || "").slice(0, 140),
+        topic: String(arr[0]?.topic || ""),
+        count: arr.length,
+      })),
+    };
+  }, [questions]);
+
+  const filteredDuplicateRowCount = useMemo(
+    () => filteredQuestions.filter((q) => q?.id && duplicateInfo.duplicateIds.has(q.id)).length,
+    [filteredQuestions, duplicateInfo.duplicateIds]
+  );
 
   const levelFilterOptions = useMemo(() => {
     const s = new Set();
@@ -2058,6 +2235,66 @@ function QuestionSection({
         <strong> Topic</strong>, <strong>Level</strong> (easy/medium/hard)
       </div>
 
+      <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>
+          <strong>{questions.length}</strong> loaded
+        </span>
+        <span className="text-gray-400">·</span>
+        <span>
+          <strong>{filteredQuestions.length}</strong> match filters
+        </span>
+        {duplicateInfo.dupGroupCount > 0 ? (
+          <>
+            <span className="text-gray-400">·</span>
+            <span className="text-amber-900">
+              <strong>{filteredDuplicateRowCount}</strong> filtered row
+              {filteredDuplicateRowCount !== 1 ? "s" : ""} in a duplicate group
+            </span>
+          </>
+        ) : null}
+        {hasMore ? (
+          <>
+            <span className="text-gray-400">·</span>
+            <span className="text-amber-800">More on server — Load more</span>
+          </>
+        ) : null}
+        <span className="text-gray-400">·</span>
+        <span className="text-gray-600">Cached in browser ~8 min — use Refresh to hit the server</span>
+      </div>
+
+      {duplicateInfo.dupGroupCount > 0 ? (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          <div className="flex flex-wrap items-center gap-2 justify-between gap-y-1">
+            <span>
+              Duplicates among <strong>loaded</strong> questions:{" "}
+              <strong>{duplicateInfo.dupQuestionCount}</strong> rows in{" "}
+              <strong>{duplicateInfo.dupGroupCount}</strong> group
+              {duplicateInfo.dupGroupCount !== 1 ? "s" : ""} (same text, options, and correct indices).
+            </span>
+            <button
+              type="button"
+              className="text-amber-900 underline text-xs shrink-0"
+              onClick={() => setShowDupPanel((o) => !o)}
+            >
+              {showDupPanel ? "Hide detail" : "Show detail"}
+            </button>
+          </div>
+          {showDupPanel ? (
+            <ul className="mt-2 space-y-2 max-h-52 overflow-y-auto text-xs list-disc pl-5 marker:text-amber-700">
+              {duplicateInfo.dupGroupsPreview.map((g, i) => (
+                <li key={i}>
+                  <span className="font-semibold">×{g.count}</span> {g.preview}
+                  {g.topic ? (
+                    <span className="text-amber-900/80"> — topic: {g.topic}</span>
+                  ) : null}
+                  <div className="font-mono text-[10px] text-amber-900/70 mt-0.5 break-all">IDs: {g.ids}</div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <label className="text-sm font-medium text-gray-700">Topic:</label>
         <select
@@ -2087,7 +2324,7 @@ function QuestionSection({
           ))}
         </select>
 
-        {hasMore && (
+        {hasMore ? (
           <button
             type="button"
             onClick={loadMoreQuestions}
@@ -2096,16 +2333,23 @@ function QuestionSection({
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>
-        )}
+        ) : null}
 
-        <span className="text-sm text-gray-500 ml-auto">
-          Showing {filteredQuestions.length} loaded question{filteredQuestions.length !== 1 ? "s" : ""}
-          {hasMore ? " (more on server — use Load more)" : ""}
-        </span>
-        <span className="text-xs text-gray-500 w-full sm:w-auto sm:ml-2">
-          Topic list uses server metadata when available; level filter applies to loaded rows only.
-        </span>
+        <button
+          type="button"
+          onClick={refreshQuestionsFromServer}
+          disabled={listLoading}
+          className="ml-auto px-3 py-2 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-900 text-sm hover:bg-indigo-100 disabled:opacity-50"
+        >
+          Refresh from server
+        </button>
       </div>
+
+      <p className="text-xs text-gray-500 mb-3">
+        Topic dropdown uses server metadata when available; level filter applies to loaded rows only.
+        Duplicate detection uses only the questions currently loaded in memory (not the whole bank
+        until you load more).
+      </p>
 
       {listLoading && (
         <p className="text-sm text-gray-500 mb-3" aria-live="polite">
@@ -2127,6 +2371,13 @@ function QuestionSection({
             <div className="border p-4 rounded bg-white">
             <div className="flex justify-between gap-4">
               <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  {duplicateInfo.duplicateIds.has(question.id) ? (
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded">
+                      Duplicate
+                    </span>
+                  ) : null}
+                </div>
                 <p className="font-semibold whitespace-pre-wrap">{question.text}</p>
                 {question.imageUrl && (
                   <OptimizedImage

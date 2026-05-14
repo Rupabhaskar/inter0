@@ -1,8 +1,76 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { collection, collectionGroup, getDocs, limit, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+const SAMPLE_QB_BATCH_SIZE = 10;
+const SAMPLE_QB_MAX_SCAN = 1200;
+const SAMPLE_QB_MIX_RATIOS = [
+  [5, 5],
+  [6, 4],
+  [4, 6],
+  [7, 3],
+  [3, 7],
+];
+
+function shuffleSampleQB(arr) {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function detectExamLabelSampleQB(testType, testName) {
+  const value = `${testType || ""} ${testName || ""}`.toLowerCase();
+  if (value.includes("eamcet") || value.includes("eapcet")) return "EAMCET";
+  if (value.includes("advanced")) return "JEE Advanced";
+  if (value.includes("jee") || value.includes("mains")) return "JEE Mains";
+  return "General";
+}
+
+function normalizeSubjectSampleQB(value) {
+  const v = String(value || "").trim().toLowerCase();
+  if (!v) return null;
+  if (v.includes("chem")) return "Chemistry";
+  if (v.includes("phy")) return "Physics";
+  if (v.includes("math")) return "Maths";
+  return null;
+}
+
+function pickBatchSampleQB(pool, prevBatch = []) {
+  if (!Array.isArray(pool) || pool.length === 0) return [];
+  const prevPaths = new Set((prevBatch || []).map((q) => q.path));
+  const withoutPrev = pool.filter((q) => !prevPaths.has(q.path));
+  const source = withoutPrev.length >= SAMPLE_QB_BATCH_SIZE ? withoutPrev : pool;
+  const mains = source.filter((q) => q.examType === "JEE Mains");
+  const eamcet = source.filter((q) => q.examType === "EAMCET");
+  const others = source.filter((q) => q.examType !== "JEE Mains" && q.examType !== "EAMCET");
+
+  const [mainsReq, eamcetReq] = shuffleSampleQB(SAMPLE_QB_MIX_RATIOS)[0];
+  const pickedMains = shuffleSampleQB(mains).slice(0, Math.min(mainsReq, mains.length));
+  const pickedEamcet = shuffleSampleQB(eamcet).slice(0, Math.min(eamcetReq, eamcet.length));
+
+  const pickedPaths = new Set([
+    ...pickedMains.map((q) => q.path),
+    ...pickedEamcet.map((q) => q.path),
+  ]);
+  const mainsLeft = mains.filter((q) => !pickedPaths.has(q.path));
+  const eamcetLeft = eamcet.filter((q) => !pickedPaths.has(q.path));
+  const othersLeft = others.filter((q) => !pickedPaths.has(q.path));
+
+  const remaining = SAMPLE_QB_BATCH_SIZE - (pickedMains.length + pickedEamcet.length);
+  const filler = shuffleSampleQB([...mainsLeft, ...eamcetLeft, ...othersLeft]).slice(
+    0,
+    Math.max(0, remaining)
+  );
+
+  const combined = [...pickedMains, ...pickedEamcet, ...filler];
+  return shuffleSampleQB(combined).slice(0, Math.min(SAMPLE_QB_BATCH_SIZE, source.length));
+}
 
 function QuestionCard({ q, index }) {
   return (
@@ -19,12 +87,13 @@ function QuestionCard({ q, index }) {
       <p className="text-slate-900 font-medium whitespace-pre-wrap">{q.text}</p>
 
       {q.imageUrl ? (
-        <img
+        <Image
           src={q.imageUrl}
           alt={`Question ${index + 1}`}
-          className="mt-3 max-w-full max-h-72 rounded border object-contain bg-white"
-          loading="lazy"
-          referrerPolicy="no-referrer"
+          width={900}
+          height={500}
+          unoptimized
+          className="mt-3 max-w-full max-h-72 w-auto h-auto rounded border object-contain bg-white"
         />
       ) : null}
 
@@ -37,12 +106,13 @@ function QuestionCard({ q, index }) {
               </span>
               {opt}
               {Array.isArray(q.optionImages) && q.optionImages[i] ? (
-                <img
+                <Image
                   src={q.optionImages[i]}
                   alt={`Option ${String.fromCharCode(65 + i)} image`}
-                  className="mt-2 max-w-full max-h-40 rounded border object-contain bg-white"
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
+                  width={640}
+                  height={320}
+                  unoptimized
+                  className="mt-2 max-w-full max-h-40 w-auto h-auto rounded border object-contain bg-white"
                 />
               ) : null}
             </li>
@@ -60,78 +130,6 @@ export default function SampleQBPage() {
   const [subjectBlocks, setSubjectBlocks] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState(null); // ✅ NEW
 
-  const BATCH_SIZE = 10;
-  const MAX_SCAN = 1200;
-  const MIX_RATIOS = [
-    [5, 5],
-    [6, 4],
-    [4, 6],
-    [7, 3],
-    [3, 7],
-  ]; // [JEE Mains, EAMCET]
-
-  const shuffle = (arr) => {
-    const copy = [...arr];
-    for (let i = copy.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [copy[i], copy[j]] = [copy[j], copy[i]];
-    }
-    return copy;
-  };
-
-  const detectExamLabel = (testType, testName) => {
-    const value = `${testType || ""} ${testName || ""}`.toLowerCase();
-    if (value.includes("eamcet") || value.includes("eapcet")) return "EAMCET";
-    if (value.includes("advanced")) return "JEE Advanced";
-    if (value.includes("jee") || value.includes("mains")) return "JEE Mains";
-    return "General";
-  };
-
-  const normalizeSubject = (value) => {
-    const v = String(value || "").trim().toLowerCase();
-    if (!v) return null;
-    if (v.includes("chem")) return "Chemistry";
-    if (v.includes("phy")) return "Physics";
-    if (v.includes("math")) return "Maths";
-    return null;
-  };
-
-  const pickBatch = (pool, prevBatch = []) => {
-    if (!Array.isArray(pool) || pool.length === 0) return [];
-    const prevPaths = new Set((prevBatch || []).map((q) => q.path));
-    const withoutPrev = pool.filter((q) => !prevPaths.has(q.path));
-    const source = withoutPrev.length >= BATCH_SIZE ? withoutPrev : pool;
-    const mains = source.filter((q) => q.examType === "JEE Mains");
-    const eamcet = source.filter((q) => q.examType === "EAMCET");
-    const others = source.filter(
-      (q) => q.examType !== "JEE Mains" && q.examType !== "EAMCET"
-    );
-
-    const [mainsReq, eamcetReq] = shuffle(MIX_RATIOS)[0];
-    const pickedMains = shuffle(mains).slice(0, Math.min(mainsReq, mains.length));
-    const pickedEamcet = shuffle(eamcet).slice(
-      0,
-      Math.min(eamcetReq, eamcet.length)
-    );
-
-    const pickedPaths = new Set([
-      ...pickedMains.map((q) => q.path),
-      ...pickedEamcet.map((q) => q.path),
-    ]);
-    const mainsLeft = mains.filter((q) => !pickedPaths.has(q.path));
-    const eamcetLeft = eamcet.filter((q) => !pickedPaths.has(q.path));
-    const othersLeft = others.filter((q) => !pickedPaths.has(q.path));
-
-    const remaining = BATCH_SIZE - (pickedMains.length + pickedEamcet.length);
-    const filler = shuffle([...mainsLeft, ...eamcetLeft, ...othersLeft]).slice(
-      0,
-      Math.max(0, remaining)
-    );
-
-    const combined = [...pickedMains, ...pickedEamcet, ...filler];
-    return shuffle(combined).slice(0, Math.min(BATCH_SIZE, source.length));
-  };
-
   useEffect(() => {
     let cancelled = false;
 
@@ -141,7 +139,7 @@ export default function SampleQBPage() {
         setError("");
 
         const [questionSnap, superadminTestsSnap] = await Promise.all([
-          getDocs(query(collectionGroup(db, "questions"), limit(MAX_SCAN))),
+          getDocs(query(collectionGroup(db, "questions"), limit(SAMPLE_QB_MAX_SCAN))),
           getDocs(collection(db, "superadminTests")),
         ]);
 
@@ -167,10 +165,10 @@ export default function SampleQBPage() {
           if (parentCollection !== "superadminTests") return;
 
           const testMeta = parentTestRef ? testMetaMap.get(parentTestRef.path) : null;
-          const examType = detectExamLabel(testMeta?.testType, testMeta?.testName);
+          const examType = detectExamLabelSampleQB(testMeta?.testType, testMeta?.testName);
 
           const topic = String(data.topic || "").trim() || "General";
-          const subject = normalizeSubject(data.subject);
+          const subject = normalizeSubjectSampleQB(data.subject);
           if (!subject) return;
 
           if (!grouped[subject]) grouped[subject] = [];
@@ -194,11 +192,11 @@ export default function SampleQBPage() {
         const blocks = Object.entries(grouped)
           .sort(([a], [b]) => subjectOrder.indexOf(a) - subjectOrder.indexOf(b))
           .map(([subject, list]) => {
-            const allQuestions = shuffle(list);
+            const allQuestions = shuffleSampleQB(list);
             return {
               subject,
               allQuestions,
-              visibleQuestions: pickBatch(allQuestions),
+              visibleQuestions: pickBatchSampleQB(allQuestions),
             };
           });
 
@@ -231,7 +229,7 @@ export default function SampleQBPage() {
           ? block
           : {
               ...block,
-              visibleQuestions: pickBatch(block.allQuestions, block.visibleQuestions),
+              visibleQuestions: pickBatchSampleQB(block.allQuestions, block.visibleQuestions),
             }
       )
     );
